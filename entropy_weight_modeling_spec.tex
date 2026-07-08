@@ -1,0 +1,846 @@
+
+\documentclass[UTF8,a4paper,12pt]{ctexart}
+\usepackage{geometry}
+\geometry{left=2.3cm,right=2.3cm,top=2.5cm,bottom=2.5cm}
+\usepackage{amsmath,amssymb,bm}
+\usepackage{booktabs,longtable,array,multirow}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric,fit,calc}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{tcolorbox}
+\tcbuselibrary{breakable,skins}
+\hypersetup{colorlinks=true,linkcolor=blue!60!black,urlcolor=blue!60!black,citecolor=blue!60!black}
+\setCJKmainfont{Noto Serif CJK SC}
+\setCJKsansfont{Noto Sans CJK SC}
+\setCJKmonofont{Noto Sans Mono CJK SC}
+\setmainfont{TeX Gyre Termes}
+\setsansfont{TeX Gyre Heros}
+\setmonofont{DejaVu Sans Mono}
+\setlength{\headheight}{15pt}
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{熵权法建模规范}
+\rhead{Entropy Weight Method}
+\cfoot{\thepage}
+\titleformat{\section}{\Large\bfseries\color{blue!55!black}}{\thesection}{0.7em}{}
+\titleformat{\subsection}{\large\bfseries\color{blue!40!black}}{\thesubsection}{0.6em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries}{\thesubsubsection}{0.5em}{}
+\setlist[itemize]{itemsep=0.25em,topsep=0.3em}
+\setlist[enumerate]{itemsep=0.25em,topsep=0.3em}
+\captionsetup{font=small,labelfont=bf}
+\definecolor{lightblue}{RGB}{235,245,255}
+\definecolor{darkblue}{RGB}{38,84,140}
+\definecolor{lightgray}{RGB}{246,246,246}
+\lstdefinestyle{py}{
+  language=Python,
+  basicstyle=\ttfamily\footnotesize,
+  keywordstyle=\color{blue!70!black}\bfseries,
+  commentstyle=\color{green!40!black},
+  stringstyle=\color{red!60!black},
+  numbers=left,
+  numberstyle=\tiny\color{gray},
+  stepnumber=1,
+  numbersep=6pt,
+  frame=single,
+  backgroundcolor=\color{lightgray},
+  breaklines=true,
+  columns=fullflexible,
+  keepspaces=true,
+  showstringspaces=false
+}
+\newtcolorbox{methodbox}[1]{breakable,enhanced,colback=lightblue,colframe=darkblue,title=#1,fonttitle=\bfseries}
+\newtcolorbox{warnbox}[1]{breakable,enhanced,colback=yellow!8,colframe=orange!70!black,title=#1,fonttitle=\bfseries}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\dd}{\mathrm{d}}
+
+\begin{document}
+
+\begin{titlepage}
+\centering
+\vspace*{1.0cm}
+{\Huge\bfseries 熵权法建模规范\\[0.35em]}
+{\Large Entropy Weight Method for Comprehensive Evaluation\\[0.4em]}
+\vspace{0.8cm}
+{\large 适用于数学建模论文、评价类指标体系、客观赋权与综合排序}\par
+\vspace{1.2cm}
+\begin{tikzpicture}[node distance=0.9cm, every node/.style={font=\small}, box/.style={rounded corners,draw=darkblue,thick,fill=lightblue,align=center,minimum width=2.7cm,minimum height=0.75cm}, arr/.style={-Latex,thick,draw=darkblue}]
+\node[box] (s1) {评价对象\\与指标体系};
+\node[box,right=of s1] (s2) {指标正向化\\量纲统一};
+\node[box,right=of s2] (s3) {信息熵\\差异系数};
+\node[box,right=of s3] (s4) {熵权\\综合得分};
+\node[box,right=of s4] (s5) {排序分级\\结论建议};
+\draw[arr] (s1)--(s2);
+\draw[arr] (s2)--(s3);
+\draw[arr] (s3)--(s4);
+\draw[arr] (s4)--(s5);
+\end{tikzpicture}
+\vfill
+{\large 文档内容：理论原理、统计解释、建模步骤、图示、案例、Python代码、扩展方法}\par
+\vspace{0.4cm}
+{\large \today}
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+\section{方法定位：熵权法解决什么评价问题}
+
+\subsection{论文中可直接使用的表述}
+
+熵权法（Entropy Weight Method, EWM）是一种基于评价数据自身差异程度确定指标权重的客观赋权方法。若某指标在所有评价对象上的取值差异很小，说明该指标对区分评价对象的贡献有限，其信息熵较大、差异系数较小、权重应较低；若某指标在评价对象之间差异明显，则能够提供更多区分信息，其信息熵较小、差异系数较大、权重应较高。与主观赋权方法相比，熵权法不需要专家两两比较，主要依据数据矩阵计算权重，能够减少人为主观偏差。
+
+\begin{methodbox}{适用条件}
+\begin{enumerate}
+  \item 研究对象属于\textbf{综合评价、排序、分级、优劣比较}问题，而不是单一变量预测问题。
+  \item 已经能够建立评价对象集 $A=\{A_1,\ldots,A_m\}$ 与指标集 $C=\{C_1,\ldots,C_n\}$。
+  \item 各指标有可获得的客观数据，或至少能转化为可量化分值。
+  \item 指标方向可判定，即能够说明“越大越好”“越小越好”“越接近某目标越好”或“落在某区间最好”。
+  \item 各指标在样本中不能全部无差异；若某列全相等，该指标在当前评价对象集内无法提供区分信息。
+\end{enumerate}
+\end{methodbox}
+
+\subsection{建模总套路}
+
+熵权法的完整建模路线与常见综合评价论文一致，可写成以下步骤：
+
+\begin{enumerate}
+  \item \textbf{明确评价类问题。}确定评价对象、评价目标、评价范围和数据来源。
+  \item \textbf{构建指标体系。}确定一级指标、二级指标或直接指标；若指标过多或高度相关，可先做相关分析、主成分分析（PCA）或专家筛选。
+  \item \textbf{正向化处理。}把最小型、中间型、区间型等指标统一转化为“越大越好”。
+  \item \textbf{标准化处理。}消除量纲和数量级影响，得到标准化矩阵 $R=(r_{ij})$。
+  \item \textbf{计算信息熵和熵权。}由 $R$ 得到比例矩阵 $P=(p_{ij})$，计算熵值 $e_j$、差异系数 $g_j$ 和权重 $w_j$。
+  \item \textbf{综合评价与分级。}计算综合得分 $S_i$，进行排序、等级划分和图表展示。
+  \item \textbf{稳健性与结论。}检查权重是否过度受异常值或样本选择影响，结合业务背景给出解释和建议。
+\end{enumerate}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=0.72cm, every node/.style={font=\small}, process/.style={rectangle,rounded corners,draw=darkblue,fill=lightblue,thick,align=center,minimum width=5.6cm,minimum height=0.72cm}, decision/.style={diamond,draw=orange!80!black,fill=yellow!12,thick,align=center,aspect=2.1}, arr/.style={-Latex,thick}]
+\node[process] (a) {Step 1  明确评价对象、目标、数据范围};
+\node[process,below=of a] (b) {Step 2  构建指标体系：最大型/最小型/中间型/区间型};
+\node[decision,below=of b] (c) {指标是否过多\\或高度相关?};
+\node[process,below left=1.0cm and 1.1cm of c] (d1) {可先用PCA、相关分析\\或专家筛选降维};
+\node[process,below right=1.0cm and 1.1cm of c] (d2) {直接进入正向化};
+\node[process,below=2.35cm of c] (e) {Step 3  正向化与标准化，形成 $R$};
+\node[process,below=of e] (f) {Step 4  计算 $p_{ij}$、$e_j$、$g_j$、$w_j$};
+\node[process,below=of f] (g) {Step 5  计算综合得分 $S_i$、排序和分级};
+\node[process,below=of g] (h) {Step 6  画权重图、得分图，进行敏感性分析和结论评价};
+\draw[arr] (a)--(b); \draw[arr] (b)--(c);
+\draw[arr] (c)--node[left]{是}(d1); \draw[arr] (c)--node[right]{否}(d2);
+\draw[arr] (d1)--(e); \draw[arr] (d2)--(e);
+\draw[arr] (e)--(f); \draw[arr] (f)--(g); \draw[arr] (g)--(h);
+\end{tikzpicture}
+\caption{熵权法综合评价建模流程图}
+\end{figure}
+
+\section{理论原理：熵、信息量与客观赋权}
+
+\subsection{熵的简单介绍}
+
+信息论中，熵用于度量随机变量的不确定性。对离散分布 $p=(p_1,p_2,\ldots,p_m)$，Shannon 熵可写为
+\begin{equation}
+H(p)=-\sum_{i=1}^{m}p_i\ln p_i,\qquad \sum_{i=1}^{m}p_i=1,\quad p_i\ge 0.
+\end{equation}
+其中约定 $0\ln 0=0$。若某一个结果的概率为 $1$，则不确定性最低，$H=0$；若所有结果等可能，即 $p_i=1/m$，则熵最大，$H=\ln m$。
+
+熵权法把某一指标 $C_j$ 在 $m$ 个评价对象上的标准化值看成一个“经验比例分布”：
+\begin{equation}
+ p_{ij}=\frac{r_{ij}}{\sum_{i=1}^{m}r_{ij}}.
+\end{equation}
+若 $p_{1j},\ldots,p_{mj}$ 很平均，则该指标对对象的区分能力弱，熵值接近最大；若比例分布不均衡，说明该指标能够明显地区分评价对象，熵值较低。为使熵值落在 $[0,1]$，常取归一化熵：
+\begin{equation}
+ e_j=-\frac{1}{\ln m}\sum_{i=1}^{m}p_{ij}\ln p_{ij},\qquad 0\le e_j\le 1.
+\end{equation}
+再定义差异系数（也称信息效用值）
+\begin{equation}
+ g_j=1-e_j.
+\end{equation}
+于是指标权重为
+\begin{equation}
+ w_j=\frac{g_j}{\sum_{j=1}^{n}g_j},\qquad \sum_{j=1}^{n}w_j=1,\\quad w_j\ge 0.
+\end{equation}
+
+\begin{warnbox}{容易写反的一句话}
+在熵权法中，\textbf{不是熵越大权重越大}。更准确的表达是：信息熵越大，指标值越趋于均匀，能够区分评价对象的有效信息越少，因此差异系数 $g_j=1-e_j$ 越小，最终权重越低；信息熵越小，指标离散程度越大，区分能力越强，权重越高。
+\end{warnbox}
+
+\subsection{与数理统计的关系}
+
+熵权法虽然属于综合评价中的客观赋权方法，但它背后可以用概率统计语言解释。
+
+\begin{enumerate}
+  \item \textbf{经验分布思想。}比例 $p_{ij}$ 可看作指标 $j$ 在样本对象上的经验比例分布。熵值 $e_j$ 是该经验分布不确定性的函数。
+  \item \textbf{离散程度与信息贡献。}统计学中，方差、标准差、变异系数用于描述样本波动；熵权法也利用“差异越大，区分力越强”的思想，只是用熵函数表达。
+  \item \textbf{样本依赖性。}权重不是指标的永久属性，而是相对于当前评价对象集、时间范围和数据处理方式计算出来的。样本对象改变，权重可能改变。
+  \item \textbf{标准化影响。}不同正向化和标准化方法会改变 $r_{ij}$ 与 $p_{ij}$，进而影响熵权。因此论文中必须明确标准化公式。
+  \item \textbf{异常值影响。}若某指标存在极端值，熵权可能被放大。应先做缺失值、异常值、箱线图或分位数检查。
+\end{enumerate}
+
+\subsection{论文中“为什么使用熵权法”的论证模板}
+
+可在论文“模型选择”部分写成：
+
+\begin{methodbox}{方法选择论证模板}
+本文研究对象为多指标综合评价问题，各评价指标既存在量纲差异，又在不同评价对象之间表现出不同程度的波动。若直接采用等权法，难以体现指标区分能力差异；若完全采用专家赋权，又容易受到主观判断影响。熵权法能够根据评价数据自身的离散程度确定指标权重，指标差异越大，提供的有效区分信息越多，其权重越高；指标差异越小，信息熵越大，权重越低。因此，在评价数据较完整、指标可量化且需要降低主观干预的条件下，采用熵权法确定指标权重具有合理性。
+\end{methodbox}
+
+\section{数据结构与建模假设}
+
+\subsection{评价对象集、指标集与原始数据矩阵}
+
+设有 $m$ 个评价对象和 $n$ 个评价指标。原始数据矩阵为
+\begin{equation}
+X=(x_{ij})_{m\times n}=\begin{bmatrix}
+ x_{11}&x_{12}&\cdots&x_{1n}\\
+ x_{21}&x_{22}&\cdots&x_{2n}\\
+ \vdots&\vdots&\ddots&\vdots\\
+ x_{m1}&x_{m2}&\cdots&x_{mn}
+\end{bmatrix},
+\end{equation}
+其中 $x_{ij}$ 表示第 $i$ 个评价对象在第 $j$ 个指标上的原始取值。
+
+\subsection{基本假设}
+
+\begin{enumerate}
+  \item \textbf{可比性假设：}所有评价对象属于同一类问题，指标体系对每个对象都适用。
+  \item \textbf{单调性假设：}正向化后，指标值越大代表评价越好。
+  \item \textbf{数据有效性假设：}原始数据来自可靠统计、实验、调查或业务系统，缺失值和异常值经过处理。
+  \item \textbf{局部客观性假设：}权重由当前数据矩阵决定，能够客观反映当前样本中的差异贡献，但不代表因果重要性。
+  \item \textbf{独立或弱冗余假设：}指标之间不应严重重复；若高度相关，应考虑剔除、合并、PCA 或 CRITIC 等方法。
+\end{enumerate}
+
+\subsection{使用前的数据检查}
+
+在正式计算前，建议检查表 \ref{tab:check} 所示内容。
+
+\begin{table}[H]
+\centering
+\caption{熵权法使用前的数据可行性检查}
+\label{tab:check}
+\begin{tabular}{p{3.2cm}p{7.0cm}p{4.0cm}}
+\toprule
+检查项 & 判断标准 & 处理建议\\
+\midrule
+缺失值 & 是否存在空值、无效值、不可比数据 & 删除、插补或重新采集\\
+指标方向 & 是否能明确越大越好、越小越好等 & 先统一正向化\\
+量纲差异 & 是否存在单位和数量级差异 & 标准化处理\\
+零方差指标 & 某指标是否所有对象取值相同 & 该指标无法提供区分信息，可剔除或单独说明\\
+异常值 & 是否存在极端值影响权重 & 箱线图、分位数缩尾、稳健性分析\\
+高相关指标 & 指标之间是否重复表达同一信息 & 相关分析、PCA、合并或 CRITIC\\
+样本规模 & 评价对象是否过少 & 增加样本或说明局限\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{建模步骤与公式}
+
+\subsection{Step 1：明确评价类问题}
+
+写论文时先说明：评价目标是什么、评价对象是谁、评价范围多大、数据来自哪里。例如：评价若干城市的生态环境质量、评价若干月份的数据质量、评价若干方案的综合绩效。
+
+常见论文表述：
+\begin{quote}
+为客观评价各评价对象的综合水平，本文选取 $m$ 个评价对象和 $n$ 个评价指标，构建原始评价矩阵 $X=(x_{ij})_{m\times n}$。由于各指标量纲不同且指标属性存在差异，先对指标进行正向化与标准化处理，再利用熵权法确定指标权重，最后计算综合评价得分并进行排序和等级划分。
+\end{quote}
+
+\subsection{Step 2：确定指标体系}
+
+指标体系可以是一层，也可以是多层。若只有一层指标，直接计算所有指标权重；若有一级、二级指标，可分别在每个一级指标内部计算二级指标熵权，再结合一级指标权重得到综合权重。一级指标权重可以用专家法、AHP、等权、熵权或组合赋权确定。
+
+\begin{table}[H]
+\centering
+\caption{指标类型与处理方向}
+\begin{tabular}{p{2.6cm}p{5.4cm}p{5.6cm}}
+\toprule
+指标类型 & 含义 & 例子\\
+\midrule
+最大型 & 数值越大越好 & 收入、覆盖率、合格率、绿化率\\
+最小型 & 数值越小越好 & 成本、污染排放、延误时间、故障率\\
+中间型 & 越接近目标值越好 & pH 值、适宜温度、合理负荷率\\
+区间型 & 落在合理区间最好 & 人口密度合理区间、库存周转区间\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Step 3：正向化处理}
+
+正向化的目标是把所有指标转化为“值越大，评价越好”。常用公式如下。
+
+\subsubsection{最大型指标}
+\begin{equation}
+ x'_{ij}=x_{ij}.
+\end{equation}
+
+\subsubsection{最小型指标}
+若指标越小越好，可以取
+\begin{equation}
+ x'_{ij}=\max_i x_{ij}-x_{ij},
+\end{equation}
+或在所有值为正时取倒数型变换
+\begin{equation}
+ x'_{ij}=\frac{1}{x_{ij}}.
+\end{equation}
+实际建模中更推荐先说明原因，再统一使用一种变换。
+
+\subsubsection{中间型指标}
+设最优目标值为 $a_j$，越接近 $a_j$ 越好，可取
+\begin{equation}
+ x'_{ij}=1-\frac{|x_{ij}-a_j|}{\max_i |x_{ij}-a_j|}.
+\end{equation}
+若分母为 $0$，说明所有对象均等于目标值，该指标不产生区分作用。
+
+\subsubsection{区间型指标}
+设最优区间为 $[a_j,b_j]$。令
+\begin{equation}
+ d_{ij}=\begin{cases}
+0, & a_j\le x_{ij}\le b_j,\\
+a_j-x_{ij}, & x_{ij}<a_j,\\
+x_{ij}-b_j, & x_{ij}>b_j,
+\end{cases}
+\end{equation}
+则可取
+\begin{equation}
+ x'_{ij}=1-\frac{d_{ij}}{\max_i d_{ij}}.
+\end{equation}
+
+\begin{warnbox}{正向化注意事项}
+正向化不是机械代公式，必须符合实际含义。例如“污染物浓度”一般是最小型指标；“合格率”一般是最大型指标；“温度舒适度”可能是中间型指标；“负债率”可能是区间型指标。论文中要先说明指标属性，再给出公式。
+\end{warnbox}
+
+\subsection{Step 4：标准化处理}
+
+正向化后得到 $X'=(x'_{ij})$，再进行无量纲化处理。常用极差标准化为
+\begin{equation}
+ r_{ij}=\frac{x'_{ij}-\min_i x'_{ij}}{\max_i x'_{ij}-\min_i x'_{ij}}.
+\end{equation}
+若 $\max_i x'_{ij}=\min_i x'_{ij}$，该指标对当前样本没有区分能力。实践中可剔除该指标，或令其权重为 $0$，并在论文中说明。
+
+为避免 $r_{ij}=0$ 导致 $\ln 0$ 的数值问题，可以在计算比例时采用 $0\ln 0=0$ 的数学约定，也可以加入很小的平移量 $\varepsilon$：
+\begin{equation}
+\tilde r_{ij}=r_{ij}+\varepsilon,\qquad \varepsilon=10^{-12}\text{ 或 }10^{-6}.
+\end{equation}
+
+\subsection{Step 5：计算信息熵、差异系数和熵权}
+
+先将标准化矩阵转化为比例矩阵：
+\begin{equation}
+ p_{ij}=\frac{\tilde r_{ij}}{\sum_{i=1}^{m}\tilde r_{ij}}.
+\end{equation}
+再计算第 $j$ 个指标的信息熵：
+\begin{equation}
+ e_j=-k\sum_{i=1}^{m}p_{ij}\ln p_{ij},\qquad k=\frac{1}{\ln m}.
+\end{equation}
+差异系数为
+\begin{equation}
+ g_j=1-e_j.
+\end{equation}
+最后得到熵权：
+\begin{equation}
+ w_j=\frac{g_j}{\sum_{j=1}^{n}g_j}.
+\end{equation}
+
+\begin{methodbox}{权重解释}
+若 $w_j$ 最大，说明第 $j$ 个指标在当前评价对象之间差异最大、区分贡献最高；若 $w_j$ 最小，说明该指标在当前对象之间变化较小，综合评价时贡献较弱。注意：这不是说该指标在现实中“不重要”，而是说它在当前样本中“不太能区分对象”。
+\end{methodbox}
+
+\subsection{Step 6：计算综合得分、排序和等级}
+
+综合评价值可用线性加权模型：
+\begin{equation}
+ S_i=\sum_{j=1}^{n}w_j r_{ij},\qquad i=1,2,\ldots,m.
+\end{equation}
+若各指标本身已经是 $0$--$100$ 分或百分制评价值，并且方向一致，也可采用
+\begin{equation}
+ Q_i=\sum_{j=1}^{n}w_j x'_{ij},
+\end{equation}
+这样结果更容易解释为“综合质量指数”。
+
+等级划分可以根据研究领域设置。例如百分制下可采用表 \ref{tab:levels}。
+
+\begin{table}[H]
+\centering
+\caption{综合评价等级划分示例}
+\label{tab:levels}
+\begin{tabular}{cccccc}
+\toprule
+得分区间 & $[95,100]$ & $[90,95)$ & $[85,90)$ & $[80,85)$ & $[0,80)$\\
+\midrule
+等级 & 优秀 & 良好 & 中等 & 达标 & 不达标\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{多级熵权法与组合评价}
+
+\subsection{一级熵权法}
+
+当指标集只有一层时，直接对 $n$ 个指标计算熵权 $w_1,\ldots,w_n$，再用 $S_i=\sum_jw_jr_{ij}$ 得到评价结果。这是最常见、最容易实现的情形。
+
+\subsection{多级熵权法}
+
+当指标体系有层次结构时，例如一级指标 $B_1,B_2,\ldots,B_q$，每个一级指标下有若干二级指标 $C_{jk}$，可以按如下方式处理：
+
+\begin{enumerate}
+  \item 在每个一级指标内部，对其二级指标计算局部熵权 $v_{jk}$；
+  \item 对一级指标也计算或给定一级权重 $u_j$；
+  \item 二级指标的总权重为
+  \begin{equation}
+  W_{jk}=u_jv_{jk};
+  \end{equation}
+  \item 最终综合得分为
+  \begin{equation}
+  S_i=\sum_{j=1}^{q}\sum_{k=1}^{n_j}W_{jk}r_{ijk}.
+  \end{equation}
+\end{enumerate}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=0.75cm, every node/.style={font=\small}, box/.style={draw=darkblue,fill=lightblue,rounded corners,thick,align=center,minimum height=0.65cm}, arr/.style={-Latex,thick}]
+\node[box,minimum width=4.2cm] (goal) {目标层：综合评价得分};
+\node[box,below left=1.0cm and 2.0cm of goal,minimum width=2.7cm] (b1) {一级指标 $B_1$};
+\node[box,below=1.0cm of goal,minimum width=2.7cm] (b2) {一级指标 $B_2$};
+\node[box,below right=1.0cm and 2.0cm of goal,minimum width=2.7cm] (b3) {一级指标 $B_q$};
+\node[box,below=of b1,minimum width=2.7cm] (c1) {$C_{11},C_{12},\ldots$};
+\node[box,below=of b2,minimum width=2.7cm] (c2) {$C_{21},C_{22},\ldots$};
+\node[box,below=of b3,minimum width=2.7cm] (c3) {$C_{q1},C_{q2},\ldots$};
+\draw[arr] (goal)--(b1); \draw[arr] (goal)--(b2); \draw[arr] (goal)--(b3);
+\draw[arr] (b1)--(c1); \draw[arr] (b2)--(c2); \draw[arr] (b3)--(c3);
+\end{tikzpicture}
+\caption{多级熵权法指标结构图}
+\end{figure}
+
+\subsection{与主观赋权的组合}
+
+若研究既需要体现专家经验，又希望减少主观偏差，可采用组合权重。设 AHP 或专家打分得到主观权重 $a_j$，熵权法得到客观权重 $b_j$，可取
+\begin{equation}
+ w_j=\alpha a_j+(1-\alpha)b_j,\qquad 0\le \alpha\le 1.
+\end{equation}
+常见做法为 $\alpha=0.5$。也可采用乘法归一化：
+\begin{equation}
+ w_j=\frac{a_jb_j}{\sum_{j=1}^{n}a_jb_j}.
+\end{equation}
+
+\section{案例：航行通告数据质量评价}
+
+本节给出一个可写入论文的简化案例。某研究以航行通告数据质量为评价对象，选取准确性、有效性、完整性、规范性、及时性五个指标，通过业务系统统计 2021 年下半年各月份数据，利用熵权法得到权重并计算综合质量指数。该案例说明熵权法适合数据质量评价这类多指标、客观统计数据较完整的问题。
+
+\begin{table}[H]
+\centering
+\caption{航行通告数据质量评价数据示例（单位：\%）}
+\label{tab:notam_data}
+\begin{tabular}{lccccc}
+\toprule
+时间 & 准确性 & 有效性 & 完整性 & 规范性 & 及时性\\
+\midrule
+7月 & 96.64 & 99.85 & 99.03 & 96.34 & 88.47\\
+8月 & 97.27 & 99.35 & 98.82 & 95.32 & 89.84\\
+9月 & 97.42 & 99.94 & 94.58 & 96.65 & 88.34\\
+10月 & 98.47 & 98.46 & 97.85 & 97.00 & 91.92\\
+11月 & 98.44 & 99.79 & 97.38 & 97.47 & 91.06\\
+12月 & 98.10 & 99.80 & 99.78 & 97.17 & 90.32\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+对表 \ref{tab:notam_data} 进行正向化和极差标准化后，计算得到熵值与权重如表 \ref{tab:notam_weight} 所示。
+
+\begin{table}[H]
+\centering
+\caption{熵值和熵权计算结果示例}
+\label{tab:notam_weight}
+\begin{tabular}{lccccc}
+\toprule
+指标 & 准确性 & 有效性 & 完整性 & 规范性 & 及时性\\
+\midrule
+熵值 $e_j$ & 0.853 & 0.891 & 0.885 & 0.881 & 0.774\\
+熵权 $w_j$ & 0.205 & 0.153 & 0.160 & 0.166 & 0.316\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+可见，及时性权重最高，说明在该评价数据中，及时性指标的差异最明显，对区分各月份综合数据质量贡献最大；有效性权重较低，说明各月份有效性指标整体差异较小。
+
+采用百分制线性加权 $Q_i=\sum_jw_jx_{ij}$，得到综合评价结果如表 \ref{tab:notam_score}。
+
+\begin{table}[H]
+\centering
+\caption{综合评价得分与等级示例}
+\label{tab:notam_score}
+\begin{tabular}{lccc}
+\toprule
+时间 & 综合质量指数 & 排序 & 等级\\
+\midrule
+7月 & 94.88 & 5 & 良好\\
+8月 & 95.17 & 4 & 优秀\\
+9月 & 94.35 & 6 & 良好\\
+10月 & 96.06 & 1 & 优秀\\
+11月 & 95.98 & 3 & 优秀\\
+12月 & 96.02 & 2 & 优秀\\
+下半年 & 95.38 & -- & 优秀\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+  ybar,
+  width=13cm,
+  height=6.2cm,
+  ymin=0,
+  ymax=0.36,
+  ylabel={熵权},
+  symbolic x coords={准确性,有效性,完整性,规范性,及时性},
+  xtick=data,
+  x tick label style={rotate=0,anchor=north,font=\small},
+  nodes near coords,
+  nodes near coords style={font=\scriptsize},
+  bar width=18pt,
+  grid=major,
+]
+\addplot coordinates {(准确性,0.205) (有效性,0.153) (完整性,0.160) (规范性,0.166) (及时性,0.316)};
+\end{axis}
+\end{tikzpicture}
+\caption{示例指标熵权柱状图}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+  width=13cm,
+  height=6.2cm,
+  ymin=94,
+  ymax=96.4,
+  ylabel={综合质量指数},
+  xlabel={月份},
+  symbolic x coords={7月,8月,9月,10月,11月,12月},
+  xtick=data,
+  ymajorgrids=true,
+  mark=*]
+\addplot+[thick] coordinates {(7月,94.88) (8月,95.17) (9月,94.35) (10月,96.06) (11月,95.98) (12月,96.02)};
+\end{axis}
+\end{tikzpicture}
+\caption{示例综合质量指数折线图}
+\end{figure}
+
+\subsection{案例结论写法}
+
+\begin{methodbox}{结论评价模板}
+由熵权计算结果可知，五个指标中及时性权重最高，说明该指标在不同月份之间的差异较大，是影响综合质量指数排序的主要因素；有效性权重最低，说明该指标在样本期内较稳定，对区分月份质量水平的贡献较弱。综合评价结果显示，10月综合质量指数最高，9月最低；下半年综合质量指数为 95.38，按照设定等级标准属于“优秀”水平。进一步分析可发现，得分较低月份主要受及时性或完整性影响，因此后续改进应重点关注数据处理时效、缺报补报机制和自动化处理水平。
+\end{methodbox}
+
+\section{结果展示与论文图表规范}
+
+熵权法论文中建议至少给出以下图表：
+
+\begin{enumerate}
+  \item \textbf{指标体系图：}说明目标层、准则层、指标层。
+  \item \textbf{原始数据表：}列出评价对象和各指标取值。
+  \item \textbf{正向化与标准化公式：}说明每类指标如何处理。
+  \item \textbf{熵值与权重表：}列出 $e_j$、$g_j$、$w_j$。
+  \item \textbf{权重柱状图：}直观显示关键指标。
+  \item \textbf{综合得分表：}列出得分、排序、等级。
+  \item \textbf{综合得分图：}条形图、折线图或雷达图。
+\end{enumerate}
+
+\begin{table}[H]
+\centering
+\caption{论文中常用表格模板}
+\begin{tabular}{p{3.0cm}p{6.1cm}p{5.0cm}}
+\toprule
+表格名称 & 主要内容 & 作用\\
+\midrule
+指标体系表 & 一级指标、二级指标、指标属性、单位 & 说明评价体系来源和含义\\
+原始数据表 & 各评价对象在各指标上的原始值 & 保证数据透明\\
+标准化结果表 & 正向化、标准化后的 $r_{ij}$ & 说明计算过程\\
+熵权结果表 & $e_j$、$g_j$、$w_j$ & 展示权重来源\\
+综合评价表 & $S_i$、排序、等级 & 得出最终结论\\
+敏感性分析表 & 不同标准化方法或剔除异常值后的排序 & 检验稳健性\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{网络扩展方法与改进思路}
+
+\subsection{熵权-TOPSIS 法}
+
+TOPSIS 法通过计算评价对象与正理想解、负理想解的距离来排序。熵权法可用于确定 TOPSIS 中的指标权重。基本思路为：
+\begin{enumerate}
+  \item 用熵权法计算 $w_j$；
+  \item 构造加权标准化矩阵 $z_{ij}=w_jr_{ij}$；
+  \item 确定正理想解 $Z^+$ 和负理想解 $Z^-$；
+  \item 计算距离 $D_i^+$、$D_i^-$；
+  \item 计算贴近度
+  \begin{equation}
+  C_i=\frac{D_i^-}{D_i^++D_i^-}.
+  \end{equation}
+  $C_i$ 越大，评价对象越优。
+\end{enumerate}
+
+\subsection{熵权-模糊综合评价法}
+
+若评价结果需要归入“优、良、中、差”等评语集，可用熵权确定指标权重，再构造隶属度矩阵 $R$，计算
+\begin{equation}
+ B=W R.
+\end{equation}
+最后按最大隶属度原则或加权等级分值给出评价等级。
+
+\subsection{AHP-熵权组合赋权}
+
+AHP 体现专家对指标重要性的判断，熵权法体现指标数据差异。两者组合可兼顾主观经验与客观数据：
+\begin{equation}
+ w_j=\alpha w_j^{\mathrm{AHP}}+(1-\alpha)w_j^{\mathrm{EWM}}.
+\end{equation}
+适合政策评价、生态评价、工程方案评价等既有专家经验又有统计数据的场景。
+
+\subsection{CRITIC 与标准差赋权}
+
+标准差赋权直接用各指标标准差确定权重，逻辑简单，但没有考虑指标之间冲突或冗余。CRITIC 法同时考虑指标的对比强度和指标间相关关系，若两个指标高度相关，则其提供的信息可能重复。若研究中指标相关性很强，可将 CRITIC 作为熵权法的对比方法。
+
+\subsection{PCA 与熵权法结合}
+
+当指标很多且存在明显共线性时，可以先用主成分分析进行降维，得到少数主成分，再对主成分或筛选后的指标使用熵权法。注意 PCA 的主成分解释性较弱，论文中需要解释主成分含义，不能只给数学结果。
+
+\subsection{稳健性与敏感性分析}
+
+建议至少做一种敏感性检验：
+\begin{enumerate}
+  \item 更换标准化方法，比较权重和排序是否变化；
+  \item 删除一个指标，比较排序是否大幅变化；
+  \item 对数据进行 $5\%$ 或 $10\%$ 扰动，重复计算权重；
+  \item 使用 Spearman 秩相关系数比较不同方法排序一致性；
+  \item 对时间序列数据采用滚动窗口熵权，观察权重是否稳定。
+\end{enumerate}
+
+\section{Python 代码}
+
+下面代码包含正向化、标准化、熵权计算、综合得分、等级划分和示例数据复现。可直接保存为 \texttt{entropy\_weight\_model.py} 运行。
+
+\begin{lstlisting}[style=py,caption={熵权法完整 Python 代码}]
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+EPS = 1e-12
+
+
+def positive_transform(x, types, targets=None, intervals=None):
+    """
+    Transform all criteria to benefit type: larger is better.
+
+    Parameters
+    ----------
+    x : array-like, shape (m, n)
+    types : list[str]
+        'max', 'min', 'mid', or 'interval'.
+    targets : dict[int, float]
+        Target values for middle type criteria.
+    intervals : dict[int, tuple[float, float]]
+        Best intervals for interval type criteria.
+    """
+    x = np.asarray(x, dtype=float)
+    z = x.copy()
+    targets = targets or {}
+    intervals = intervals or {}
+
+    for j, t in enumerate(types):
+        col = x[:, j]
+        if t == "max":
+            z[:, j] = col
+        elif t == "min":
+            z[:, j] = np.max(col) - col
+        elif t == "mid":
+            a = targets[j]
+            d = np.abs(col - a)
+            max_d = np.max(d)
+            z[:, j] = 1.0 if max_d < EPS else 1 - d / max_d
+        elif t == "interval":
+            a, b = intervals[j]
+            d = np.zeros_like(col)
+            d[col < a] = a - col[col < a]
+            d[col > b] = col[col > b] - b
+            max_d = np.max(d)
+            z[:, j] = 1.0 if max_d < EPS else 1 - d / max_d
+        else:
+            raise ValueError(f"Unknown type: {t}")
+    return z
+
+
+def minmax_standardize(z):
+    """Min-max standardization by column."""
+    z = np.asarray(z, dtype=float)
+    col_min = np.min(z, axis=0)
+    col_max = np.max(z, axis=0)
+    denom = col_max - col_min
+
+    r = np.zeros_like(z)
+    valid = denom > EPS
+    r[:, valid] = (z[:, valid] - col_min[valid]) / denom[valid]
+    # Columns with zero variation keep zeros and receive zero entropy information.
+    return r, valid
+
+
+def entropy_weight(r):
+    """Calculate entropy values, diversity coefficients, and weights."""
+    r = np.asarray(r, dtype=float)
+    m, n = r.shape
+
+    # Add EPS to avoid log(0); it has negligible effect on normal data.
+    r_safe = r + EPS
+    p = r_safe / np.sum(r_safe, axis=0, keepdims=True)
+
+    e = -np.sum(p * np.log(p), axis=0) / np.log(m)
+    g = 1 - e
+
+    if np.sum(g) < EPS:
+        # If all criteria have no contrast, fall back to equal weights.
+        w = np.ones(n) / n
+    else:
+        w = g / np.sum(g)
+    return e, g, w, p
+
+
+def score(values, weights):
+    """Linear weighted score."""
+    return np.asarray(values, dtype=float) @ np.asarray(weights, dtype=float)
+
+
+def grade_by_score(s):
+    if s >= 95:
+        return "优秀"
+    if s >= 90:
+        return "良好"
+    if s >= 85:
+        return "中等"
+    if s >= 80:
+        return "达标"
+    return "不达标"
+
+
+if __name__ == "__main__":
+    months = ["7月", "8月", "9月", "10月", "11月", "12月"]
+    criteria = ["准确性", "有效性", "完整性", "规范性", "及时性"]
+    data = np.array([
+        [96.64, 99.85, 99.03, 96.34, 88.47],
+        [97.27, 99.35, 98.82, 95.32, 89.84],
+        [97.42, 99.94, 94.58, 96.65, 88.34],
+        [98.47, 98.46, 97.85, 97.00, 91.92],
+        [98.44, 99.79, 97.38, 97.47, 91.06],
+        [98.10, 99.80, 99.78, 97.17, 90.32],
+    ])
+
+    types = ["max", "max", "max", "max", "max"]
+    z = positive_transform(data, types)
+    r, valid = minmax_standardize(z)
+    e, g, w, p = entropy_weight(r)
+
+    # For percentage quality indicators, use original positive values for final quality index.
+    quality_index = score(z, w)
+    result = pd.DataFrame({
+        "月份": months,
+        "综合质量指数": quality_index,
+        "评价等级": [grade_by_score(v) for v in quality_index],
+    })
+    result["排序"] = result["综合质量指数"].rank(ascending=False, method="min").astype(int)
+
+    weight_table = pd.DataFrame({
+        "指标": criteria,
+        "熵值": e,
+        "差异系数": g,
+        "熵权": w,
+    })
+
+    print(weight_table.round(4))
+    print(result.round(2))
+
+    # Basic charts.
+    plt.figure(figsize=(8, 4))
+    plt.bar(criteria, w)
+    plt.ylabel("Entropy weight")
+    plt.title("Criterion weights")
+    plt.tight_layout()
+    plt.savefig("entropy_weights.png", dpi=200)
+
+    plt.figure(figsize=(8, 4))
+    plt.plot(months, quality_index, marker="o")
+    plt.ylabel("Quality index")
+    plt.title("Comprehensive scores")
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.savefig("entropy_scores.png", dpi=200)
+\end{lstlisting}
+
+\section{论文写作模板}
+
+\subsection{模型建立段落}
+
+\begin{quote}
+设评价对象集为 $A=\{A_1,A_2,\ldots,A_m\}$，指标集为 $C=\{C_1,C_2,\ldots,C_n\}$，原始数据矩阵为 $X=(x_{ij})_{m\times n}$。由于各指标量纲、数量级和属性方向不同，先对最小型、中间型和区间型指标进行正向化处理，使所有指标均转化为最大型指标。随后采用极差标准化得到标准化矩阵 $R=(r_{ij})$。在此基础上，计算第 $j$ 个指标下第 $i$ 个评价对象的比例 $p_{ij}$，并根据 Shannon 信息熵计算指标熵值 $e_j$。定义差异系数 $g_j=1-e_j$，并将其归一化得到熵权 $w_j$。最后构建线性加权综合评价模型 $S_i=\sum_{j=1}^{n}w_jr_{ij}$，根据综合得分对评价对象进行排序和等级划分。
+\end{quote}
+
+\subsection{结果分析段落}
+
+\begin{quote}
+从指标权重看，$C_a$ 的熵权最高，说明该指标在评价对象之间差异程度最大，对综合评价结果的区分作用最强；$C_b$ 的熵权最低，说明该指标在样本中的波动较小，对排序影响相对有限。从综合得分看，$A_p$ 得分最高，综合表现最优；$A_q$ 得分最低，是后续改进的重点对象。结合指标层结果可知，影响综合评价结果的主要因素为 $C_a$、$C_c$ 和 $C_d$，因此建议从这些方面进行优化。
+\end{quote}
+
+\subsection{局限性段落}
+
+\begin{quote}
+需要指出的是，熵权法是一种基于样本数据离散程度的客观赋权方法，其权重结果受评价对象范围、样本数量、标准化方法和异常值影响。某指标权重较低并不意味着该指标在现实业务中不重要，而仅表示其在当前样本中区分能力较弱。因此，本文进一步结合业务背景进行解释，并通过敏感性分析检验评价结果的稳定性。
+\end{quote}
+
+\section{常见错误与改正}
+
+\begin{longtable}{p{4.0cm}p{5.0cm}p{5.4cm}}
+\caption{熵权法常见错误}\label{tab:mistakes}\\
+\toprule
+错误写法 & 问题 & 正确做法\\
+\midrule
+\endfirsthead
+\toprule
+错误写法 & 问题 & 正确做法\\
+\midrule
+\endhead
+直接对原始数据求熵 & 量纲和方向不同，结果不可比 & 先正向化，再标准化\\
+把熵值当权重 & 熵越大反而区分力越弱 & 用 $g_j=1-e_j$ 后归一化得权重\\
+所有指标都默认越大越好 & 方向可能错误 & 先判断最大型、最小型、中间型、区间型\\
+忽略零值和 $\ln 0$ & 计算会报错或产生 NaN & 使用 $0\ln0=0$ 约定或加入 $\varepsilon$\\
+没有说明等级标准 & 分级缺少依据 & 提前给出分数区间或行业标准\\
+权重解释成因果重要性 & 熵权只反映样本差异贡献 & 说明“当前样本中的区分作用”\\
+指标高度重复仍全部保留 & 可能重复计权 & 做相关分析、PCA 或对比 CRITIC\\
+样本很少却过度解释权重 & 熵权不稳定 & 增加样本或做敏感性分析\\
+\bottomrule
+\end{longtable}
+
+\section{总结}
+
+熵权法的核心思想是：利用评价数据本身的离散程度确定指标权重。标准流程为“评价对象与指标体系确定 $\rightarrow$ 指标正向化 $\rightarrow$ 标准化 $\rightarrow$ 计算比例矩阵 $\rightarrow$ 信息熵 $\rightarrow$ 差异系数 $\rightarrow$ 熵权 $\rightarrow$ 综合得分 $\rightarrow$ 排序分级与结论”。该方法客观性较强、计算步骤清晰，适合数据较充分的综合评价问题。但熵权法也有明显局限：权重依赖样本、标准化和异常值，只能反映指标的区分能力，不能替代业务重要性判断。实际建模时应结合指标解释、图表展示、敏感性分析和必要的主客观组合赋权，使结论更可靠。
+
+\newpage
+\section*{参考文献与资料来源}
+\addcontentsline{toc}{section}{参考文献与资料来源}
+\begin{enumerate}[label={[\arabic*]}]
+  \item Claude E. Shannon. A Mathematical Theory of Communication. Bell System Technical Journal, 1948. Reprinted PDF hosted by Harvard Mathematics Department. \url{https://people.math.harvard.edu/~ctm/home/text/others/shannon/entropy/entropy.pdf}
+  \item pyMCDM Documentation. Objective weights: entropy method. \url{https://pymcdm.readthedocs.io/en/v1.3.1/modules/objective_weights.html}
+  \item Elzbieta Roszkowska. Impact of Normalization on Entropy-Based Weights in Multi-Criteria Decision-Making. 2024. \url{https://pmc.ncbi.nlm.nih.gov/articles/PMC11120506/}
+  \item Anath Rau Krishnan, Maznah Mat Kasim, Rizal Hamid, Mohd Fahmi Ghazali. A Modified CRITIC Method to Estimate the Objective Weights of Decision Criteria. Symmetry, 2021. \url{https://www.mdpi.com/2073-8994/13/6/973}
+  \item Zhiwei Liu et al. Research on comprehensive evaluation method of distribution network based on AHP-entropy weighting method. Frontiers in Energy Research, 2022. \url{https://www.frontiersin.org/journals/energy-research/articles/10.3389/fenrg.2022.975462/full}
+  \item Yuxin Zhu, Dequn Tian, Fangyan Yan. Effectiveness of Entropy Weight Method in Decision-Making. Mathematical Problems in Engineering, 2020. \url{https://onlinelibrary.wiley.com/doi/10.1155/2020/3564835}
+  \item 李华锋，辜汝桐，胡海青，刘建军，吴东岳. 基于熵权法的航行通告数据质量评价方法. 民航学报, 2022.
+\end{enumerate}
+
+\end{document}

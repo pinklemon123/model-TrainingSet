@@ -1,0 +1,498 @@
+\documentclass[UTF8,zihao=-4,fontset=none]{ctexart}
+\usepackage[a4paper,margin=2.2cm]{geometry}
+\usepackage{amsmath,amssymb,bm}
+\usepackage{booktabs,longtable,array,multirow}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,fit,shapes.geometric}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage{caption}
+\usepackage{float}
+\setCJKmainfont{Noto Serif CJK SC}
+\setCJKsansfont{Noto Sans CJK SC}
+\hypersetup{colorlinks=true,linkcolor=blue,urlcolor=blue,citecolor=blue}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.25em}
+\renewcommand{\arraystretch}{1.25}
+\lstset{
+  language=Python,
+  basicstyle=\ttfamily\small,
+  keywordstyle=\bfseries,
+  commentstyle=\itshape,
+  stringstyle=\ttfamily,
+  showstringspaces=false,
+  breaklines=true,
+  frame=single,
+  columns=fullflexible,
+  keepspaces=true,
+  tabsize=4
+}
+\title{层次分析法（AHP）评价类问题建模规范\\\large 理论原理、建模步骤、结论评价与 Python 代码}
+\author{适用于数学建模论文写作模板}
+\date{2026年7月}
+
+\begin{document}
+\maketitle
+\begin{abstract}
+层次分析法（Analytic Hierarchy Process, AHP）适合处理“多个评价指标、多个备选方案、需要给出综合排名或等级”的评价类问题。本文给出一套可直接写进建模论文的规范：先明确评价目标和方案，再建立目标层、准则层、方案层的层级结构；随后构造判断矩阵并检验一致性；最后计算指标权重、方案得分、总排序及总排序一致性。文末给出 Python 代码模板，可用于计算权重、一致性比率、方案得分和排序。
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+\section{方法适用场景与论文写法总流程}
+AHP 的核心思想是：把复杂评价问题拆成若干层次，在同一层内部只做“两两比较”，再把局部判断合成为整体权重。因此它特别适合“评价、选择、排序、优选、绩效打分、风险评估、环境质量评价”等问题。
+
+论文中可以按以下六步组织：
+\begin{enumerate}[label=Step\arabic*：,leftmargin=3.2em]
+  \item \textbf{解决评价类问题。} 明确评价对象、评价目标、备选方案和评价指标，说明 AHP 适用的原因。
+  \item \textbf{画出层级结构图。} 至少包含目标层、准则层、方案层；如果指标较多，可增加子准则层。
+  \item \textbf{构造判断矩阵。} 对同一层指标进行两两比较，确定评价指标孰重孰轻。
+  \item \textbf{依照评价指标对各方案打分。} 可以用定量数据归一化，也可以让专家依据 1--9 标度或等级标准评分。
+  \item \textbf{求出权重并填表。} 计算准则权重、方案局部权重或指标评分，合成最终得分。
+  \item \textbf{层次总排序一致性检验。} 若一致性不合格，应返回重新设计判断矩阵；合格后再给出结论评价。
+\end{enumerate}
+
+\section{理论原理：为什么这种评价可以用于实际}
+\subsection{基本假设}
+AHP 能够用于实际评价，通常需要满足以下假设：
+\begin{enumerate}[label=H\arabic*：,leftmargin=3em]
+  \item \textbf{可分解性假设。} 总目标可以分解为若干准则或子准则，各准则能够共同解释评价对象的优劣。
+  \item \textbf{同层可比较假设。} 同一层的因素相对于上一层目标具有可比性，可以回答“$C_i$ 相比 $C_j$ 重要多少”。
+  \item \textbf{正互反假设。} 判断矩阵 $A=(a_{ij})$ 满足 $a_{ij}>0$，$a_{ii}=1$，$a_{ji}=1/a_{ij}$。
+  \item \textbf{近似一致性假设。} 专家判断不要求完全一致，但不能自相矛盾过大。例如若 $C_1$ 比 $C_2$ 重要 3 倍，$C_2$ 比 $C_3$ 重要 2 倍，则 $C_1$ 对 $C_3$ 的重要性应接近 6 倍。
+  \item \textbf{加权合成假设。} 当各指标已经同向化、无量纲化后，方案综合效用可近似写成加权和：
+  \begin{equation}
+    S_k=\sum_{i=1}^{n} w_i x_{ik}, \quad \sum_{i=1}^{n}w_i=1,\quad w_i\ge 0 .
+  \end{equation}
+\end{enumerate}
+
+\subsection{判断矩阵与特征向量原理}
+设评价指标真实权重为 $\bm w=(w_1,w_2,\ldots,w_n)^T$。如果专家判断完全一致，则两两比较结果应满足
+\begin{equation}
+  a_{ij}=\frac{w_i}{w_j},\qquad a_{ij}a_{jk}=a_{ik} .
+\end{equation}
+此时判断矩阵为
+\begin{equation}
+A=\begin{pmatrix}
+1 & w_1/w_2 & \cdots & w_1/w_n\\
+w_2/w_1 & 1 & \cdots & w_2/w_n\\
+\vdots & \vdots & \ddots & \vdots\\
+w_n/w_1 & w_n/w_2 & \cdots & 1
+\end{pmatrix}.
+\end{equation}
+直接计算可得
+\begin{equation}
+  A\bm w=n\bm w .
+\end{equation}
+因此在完全一致时，权重向量就是判断矩阵对应最大特征值 $\lambda_{\max}=n$ 的特征向量。实际专家判断常有误差，所以取最大特征根对应的正特征向量并归一化：
+\begin{equation}
+  A\bm w=\lambda_{\max}\bm w,
+  \qquad \sum_{i=1}^n w_i=1.
+\end{equation}
+
+\subsection{概率统计解释：专家打分为什么能推广到实际}
+AHP 中的专家判断可以理解为对“真实相对重要程度”的带误差观测。常用的统计解释是：
+\begin{equation}
+  \log a_{ij}=\log w_i-\log w_j+\varepsilon_{ij},
+\end{equation}
+其中 $\varepsilon_{ij}$ 表示专家认知误差、信息误差或主观波动。若误差均值接近 0，且多位专家的判断相互独立或弱相关，则对判断矩阵取几何平均可以降低随机误差：
+\begin{equation}
+  \bar a_{ij}=\left(\prod_{r=1}^{q} a_{ij}^{(r)}\right)^{1/q}.
+\end{equation}
+在这个意义下，AHP 不是把某一个人的主观意见当成客观事实，而是把专家群体判断转化为对潜在权重的估计。若判断矩阵通过一致性检验，说明这些估计没有明显逻辑矛盾；若样本数据经过同向化和标准化，方案得分就可以被解释为在既定评价体系下的综合效用估计。
+
+需要注意：AHP 的结论只在“指标体系合理、专家来源可靠、判断矩阵一致性通过、评分数据可比”的前提下成立。它给出的是一种可解释、可复核的决策依据，而不是绝对真理。
+
+\section{层级结构图：目标层、准则层、方案层}
+论文中通常先给出类似图 \ref{fig:hierarchy} 的结构图。若准则层下面还有二级指标，则在准则层与方案层之间增加“子准则层”。
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  node distance=1.15cm,
+  box/.style={rectangle,draw,rounded corners,align=center,minimum width=2.6cm,minimum height=0.72cm},
+  small/.style={rectangle,draw,rounded corners,align=center,minimum width=2.2cm,minimum height=0.62cm},
+  arr/.style={-{Latex[length=2mm]},thick}
+]
+\node[box,fill=gray!10] (goal) {目标层\\综合评价目标 $G$};
+\node[box,below left=1.3cm and 3.6cm of goal] (c1) {准则 $C_1$};
+\node[box,below left=1.3cm and 1.1cm of goal] (c2) {准则 $C_2$};
+\node[box,below right=1.3cm and 1.1cm of goal] (c3) {准则 $C_3$};
+\node[box,below right=1.3cm and 3.6cm of goal] (c4) {准则 $C_4$};
+\node[small,below=1.35cm of c1] (a1) {方案 $A_1$};
+\node[small,below=1.35cm of c2] (a2) {方案 $A_2$};
+\node[small,below=1.35cm of c3] (a3) {方案 $A_3$};
+\node[small,below=1.35cm of c4] (a4) {方案 $A_m$};
+\foreach \c in {c1,c2,c3,c4}{\draw[arr] (goal) -- (\c);}
+\foreach \c in {c1,c2,c3,c4}{\foreach \a in {a1,a2,a3,a4}{\draw[arr,gray!55] (\c) -- (\a);}}
+\node[draw,dashed,fit=(c1)(c4),inner sep=0.22cm,label=left:{准则层}]{};
+\node[draw,dashed,fit=(a1)(a4),inner sep=0.22cm,label=left:{方案层}]{};
+\end{tikzpicture}
+\caption{AHP 三层评价结构图模板}
+\label{fig:hierarchy}
+\end{figure}
+
+若仿照城市生态环境质量评价案例，可写成：目标层为“城市生态环境质量评价”；准则层包括自然环境、社会方面、经济方面、政策方面；二级指标可包括湿度、降水、PM2.5、废气、人均绿化、人口密度、人均 GDP、土地利用率、政策完善等。赵鑫等的案例中采用 4 个一级指标和 21 个二级指标，并将 AHP 与模糊综合评价结合使用。
+
+\section{建模步骤与矩阵规范}
+\subsection{Step1：明确评价问题}
+先写清楚四件事：
+\begin{enumerate}[leftmargin=2.2em]
+  \item \textbf{评价目标：} 例如城市生态环境质量、供应商综合能力、项目风险等级。
+  \item \textbf{评价对象或方案：} 记为 $A_1,A_2,\ldots,A_m$。
+  \item \textbf{评价指标：} 记为 $C_1,C_2,\ldots,C_n$，必要时继续分解为 $C_{ij}$。
+  \item \textbf{评分方向：} 明确哪些是效益型指标，哪些是成本型指标。
+\end{enumerate}
+
+\subsection{Step2：建立层次结构}
+一般结构为
+\begin{equation}
+  G \longrightarrow \{C_1,C_2,\ldots,C_n\} \longrightarrow \{A_1,A_2,\ldots,A_m\}.
+\end{equation}
+若有子准则，则写成
+\begin{equation}
+  G \longrightarrow C_i \longrightarrow C_{ij} \longrightarrow A_k .
+\end{equation}
+建模论文中，层级结构图应放在方法部分或模型建立部分，用于说明评价体系来源和指标之间的从属关系。
+
+\subsection{Step3：构造判断矩阵}
+对准则层相对于目标层的重要性进行两两比较，得到判断矩阵
+\begin{equation}
+A=(a_{ij})_{n\times n}=\begin{pmatrix}
+1 & a_{12} & \cdots & a_{1n}\\
+1/a_{12} & 1 & \cdots & a_{2n}\\
+\vdots & \vdots & \ddots & \vdots\\
+1/a_{1n} & 1/a_{2n} & \cdots & 1
+\end{pmatrix}.
+\end{equation}
+$a_{ij}$ 表示指标 $C_i$ 相对于 $C_j$ 的重要程度。常用 1--9 标度见表 \ref{tab:scale}。
+
+\begin{table}[H]
+\centering
+\caption{AHP 1--9 标度表}
+\label{tab:scale}
+\begin{tabular}{cl}
+\toprule
+标度 & 含义\\
+\midrule
+1 & 两个因素同等重要\\
+3 & 前者比后者稍微重要\\
+5 & 前者比后者明显重要\\
+7 & 前者比后者强烈重要\\
+9 & 前者比后者极端重要\\
+2,4,6,8 & 相邻判断之间的折中值\\
+$1/3,1/5,\ldots,1/9$ & 若前者不如后者重要，则取倒数\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+如果有多位专家，应先得到每位专家的判断矩阵 $A^{(r)}$，再用几何平均合成为群体判断矩阵：
+\begin{equation}
+  a_{ij}=\left(\prod_{r=1}^{q}a_{ij}^{(r)}\right)^{1/q} .
+\end{equation}
+
+\subsection{构造后先判断“能不能用”}
+判断矩阵不能直接拿来算，至少要做以下检查：
+\begin{enumerate}[leftmargin=2.2em]
+  \item \textbf{矩阵合法性：} 是否为正互反矩阵，即 $a_{ij}>0$、$a_{ii}=1$、$a_{ij}=1/a_{ji}$。
+  \item \textbf{指标口径一致性：} 同一层指标是否都服务于同一个上层目标，是否存在明显重复或遗漏。
+  \item \textbf{评分方向一致性：} 方案评分前，效益型、成本型指标是否已经同向化。
+  \item \textbf{一致性检验：} 判断矩阵的 $CR$ 是否小于阈值。常用经验标准为 $CR<0.10$。
+\end{enumerate}
+
+\subsection{Step4：依照指标对方案打分}
+若方案层也采用两两比较，则对每个准则 $C_i$ 构造方案判断矩阵 $B_i$，得到方案在该准则下的局部权重：
+\begin{equation}
+  \bm v_i=(v_{i1},v_{i2},\ldots,v_{im})^T .
+\end{equation}
+
+若方案有客观数据，可先进行归一化。效益型指标越大越好：
+\begin{equation}
+  x'_{ik}=\frac{x_{ik}-\min_k x_{ik}}{\max_k x_{ik}-\min_k x_{ik}} .
+\end{equation}
+成本型指标越小越好：
+\begin{equation}
+  x'_{ik}=\frac{\max_k x_{ik}-x_{ik}}{\max_k x_{ik}-\min_k x_{ik}} .
+\end{equation}
+若 $\max x_{ik}=\min x_{ik}$，说明该指标不能区分方案，可赋为同一得分或剔除该指标。
+
+\subsection{Step5：计算权重、填表并求最终得分}
+常用的特征向量法如下：
+\begin{enumerate}[leftmargin=2.2em]
+  \item 求判断矩阵 $A$ 的最大特征根 $\lambda_{\max}$；
+  \item 取其对应的正特征向量 $\bm w$；
+  \item 归一化，使 $\sum_i w_i=1$。
+\end{enumerate}
+
+若采用客观评分矩阵 $X'=(x'_{ik})_{n\times m}$，则方案 $A_k$ 的总分为
+\begin{equation}
+  S_k=\sum_{i=1}^{n} w_i x'_{ik} .
+\end{equation}
+若方案层也用 AHP 两两比较，则将各准则下的方案局部权重组成矩阵
+\begin{equation}
+V=\begin{pmatrix}
+ v_{11}&v_{12}&\cdots&v_{1m}\\
+ v_{21}&v_{22}&\cdots&v_{2m}\\
+ \vdots&\vdots&\ddots&\vdots\\
+ v_{n1}&v_{n2}&\cdots&v_{nm}
+\end{pmatrix},
+\end{equation}
+综合得分向量为
+\begin{equation}
+  \bm S=\bm w^T V .
+\end{equation}
+
+论文中的结果表建议按表 \ref{tab:result-template} 写。
+\begin{table}[H]
+\centering
+\caption{AHP 权重与得分结果表模板}
+\label{tab:result-template}
+\begin{tabular}{cccccc}
+\toprule
+指标 & 局部权重 & 方案 $A_1$ & 方案 $A_2$ & $\cdots$ & 方案 $A_m$\\
+\midrule
+$C_1$ & $w_1$ & $x'_{11}$ & $x'_{12}$ & $\cdots$ & $x'_{1m}$\\
+$C_2$ & $w_2$ & $x'_{21}$ & $x'_{22}$ & $\cdots$ & $x'_{2m}$\\
+$\vdots$ & $\vdots$ & $\vdots$ & $\vdots$ & $\ddots$ & $\vdots$\\
+$C_n$ & $w_n$ & $x'_{n1}$ & $x'_{n2}$ & $\cdots$ & $x'_{nm}$\\
+\midrule
+综合得分 & -- & $S_1$ & $S_2$ & $\cdots$ & $S_m$\\
+排序 & -- &  &  &  & \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Step6：一致性检验与层次总排序一致性}
+判断矩阵一致性指标为
+\begin{equation}
+  CI=\frac{\lambda_{\max}-n}{n-1} .
+\end{equation}
+随机一致性指标 $RI$ 由矩阵阶数决定，常用取值见表 \ref{tab:ri}。
+\begin{table}[H]
+\centering
+\caption{随机一致性指标 RI 常用表}
+\label{tab:ri}
+\begin{tabular}{c|cccccccccc}
+\toprule
+$n$ & 1 & 2 & 3 & 4 & 5 & 6 & 7 & 8 & 9 & 10\\
+\midrule
+$RI$ & 0 & 0 & 0.58 & 0.90 & 1.12 & 1.24 & 1.32 & 1.41 & 1.45 & 1.49\\
+\bottomrule
+\end{tabular}
+\end{table}
+一致性比率为
+\begin{equation}
+  CR=\frac{CI}{RI} .
+\end{equation}
+当 $n=1$ 或 $n=2$ 时，可认为矩阵总是一致的；当 $n\ge 3$ 时，一般要求 $CR<0.10$。若 $CR\ge 0.10$，说明专家判断矛盾较大，应重新比较相近指标或重新组织专家打分。
+
+对于多层结构，除了每个局部判断矩阵要通过一致性检验，还要做层次总排序一致性检验。设准则层权重为 $w_i$，各准则下方案判断矩阵的局部一致性指标为 $CI_i$、随机一致性指标为 $RI_i$，则
+\begin{equation}
+  CI_{total}=\sum_{i=1}^{n}w_iCI_i,
+  \qquad
+  RI_{total}=\sum_{i=1}^{n}w_iRI_i,
+\end{equation}
+\begin{equation}
+  CR_{total}=\frac{CI_{total}}{RI_{total}} .
+\end{equation}
+若 $CR_{total}<0.10$，则层次总排序通过一致性检验，最终排序可以采用；否则需要调整判断矩阵。
+
+\section{一个小型算例：三指标、三方案}
+设评价目标为“选择最优方案”，准则为成本 $C_1$、质量 $C_2$、风险 $C_3$。专家给出准则判断矩阵
+\begin{equation}
+A=\begin{pmatrix}
+1 & 3 & 5\\
+1/3 & 1 & 2\\
+1/5 & 1/2 & 1
+\end{pmatrix}.
+\end{equation}
+计算可得准则权重近似为
+\begin{equation}
+  \bm w=(0.6483,\;0.2297,\;0.1220)^T,
+\end{equation}
+$\lambda_{\max}\approx 3.0037$，$CI\approx0.0018$，$CR\approx0.0032<0.10$，通过一致性检验。
+
+若三个方案在三个指标上的标准化得分矩阵为
+\begin{equation}
+X'=\begin{pmatrix}
+0.90&0.70&0.40\\
+0.60&0.85&0.75\\
+0.80&0.50&0.90
+\end{pmatrix},
+\end{equation}
+则
+\begin{equation}
+\bm S=\bm w^T X'=(0.8189,\;0.7100,\;0.5414).
+\end{equation}
+因此排序为 $A_1>A_2>A_3$。
+
+\section{结论评价的论文写法}
+最终结论建议按“排序结果--原因解释--可靠性说明--对策建议”四段写。
+
+\subsection{通用结论模板}
+在既定指标体系和专家判断条件下，方案 $A_i$ 的综合得分最高，说明其在主要评价指标上整体表现最优。进一步观察权重可知，影响总排序的关键指标为 $C_p$、$C_q$ 等，说明本问题中这些因素对评价结果具有主导作用。由于所有判断矩阵均通过一致性检验，且层次总排序一致性比率小于 0.10，故所得排序具有较好的逻辑一致性和可解释性。
+
+若某指标权重明显偏高，应结合实际解释其合理性。例如生态环境评价中，政策完善、废气治理、人均绿化等指标权重较高，可以解释为城市生态环境不仅受自然条件影响，也受治理政策、经济结构和社会发展水平影响。
+
+\subsection{结合城市生态环境案例的评价写法}
+以城市生态环境质量评价为例，赵鑫等的研究建立了自然环境、社会方面、经济方面和政策方面四个一级指标，以及 21 个二级指标。其 AHP 计算结果显示，一级指标中社会方面权重最大，为 0.342；自然环境权重为 0.316；复合权重中政策完善权重最大，为 0.1007，废气次之，为 0.0752。进一步结合模糊综合评价后，该城市生态环境质量评价值约为 0.5978，属于中等水平。这个结论的写法重点不是只报数值，而是说明：当前城市整体生态环境还有提升空间，治理时应优先关注权重较高、且评分不高的指标。
+
+\subsection{局限性说明}
+AHP 的局限性也应在论文中交代：
+\begin{enumerate}[leftmargin=2.2em]
+  \item 结果依赖指标体系，若指标遗漏或重复，权重会失真。
+  \item 专家判断具有主观性，应说明专家来源、人数和专业背景。
+  \item 1--9 标度只能近似表达偏好强度，不宜过度解释为精确物理量。
+  \item 加权和模型默认指标之间可补偿，若某些指标具有“一票否决”性质，需要另设约束或阈值。
+  \item 最好补充敏感性分析，检验权重小幅变化时排序是否稳定。
+\end{enumerate}
+
+\section{Python 代码模板}
+下面代码可以直接用于 AHP 建模。它包含权重计算、一致性检验、群体判断矩阵合成、客观指标归一化和最终得分排序。
+
+\begin{lstlisting}
+import numpy as np
+
+RI_TABLE = {
+    1: 0.00, 2: 0.00, 3: 0.58, 4: 0.90, 5: 1.12,
+    6: 1.24, 7: 1.32, 8: 1.41, 9: 1.45, 10: 1.49,
+    11: 1.51, 12: 1.53, 13: 1.56, 14: 1.57, 15: 1.59
+}
+
+
+def check_reciprocal(A, tol=1e-8):
+    """Check whether A is a positive reciprocal matrix."""
+    A = np.asarray(A, dtype=float)
+    if A.ndim != 2 or A.shape[0] != A.shape[1]:
+        raise ValueError("A must be a square matrix.")
+    if np.any(A <= 0):
+        raise ValueError("All entries of A must be positive.")
+    n = A.shape[0]
+    if not np.allclose(np.diag(A), np.ones(n), atol=tol):
+        raise ValueError("Diagonal entries must be 1.")
+    if not np.allclose(A * A.T, np.ones_like(A), atol=tol):
+        raise ValueError("A must satisfy a_ij = 1/a_ji.")
+    return True
+
+
+def ahp_weights(A):
+    """Return weights, lambda_max, CI, CR for a judgment matrix."""
+    A = np.asarray(A, dtype=float)
+    check_reciprocal(A)
+    n = A.shape[0]
+
+    eigvals, eigvecs = np.linalg.eig(A)
+    idx = np.argmax(eigvals.real)
+    lambda_max = eigvals[idx].real
+    w = eigvecs[:, idx].real
+
+    # The principal eigenvector can be multiplied by -1.
+    w = np.abs(w)
+    w = w / w.sum()
+
+    if n <= 2:
+        CI, CR = 0.0, 0.0
+    else:
+        CI = (lambda_max - n) / (n - 1)
+        RI = RI_TABLE.get(n)
+        if RI is None:
+            raise ValueError("RI value is not available for this n.")
+        CR = CI / RI if RI != 0 else 0.0
+    return w, lambda_max, CI, CR
+
+
+def group_geometric_mean(matrices):
+    """Aggregate several experts' judgment matrices by geometric mean."""
+    mats = np.asarray(matrices, dtype=float)
+    if mats.ndim != 3:
+        raise ValueError("Input shape should be (q, n, n).")
+    for A in mats:
+        check_reciprocal(A)
+    return np.prod(mats, axis=0) ** (1.0 / mats.shape[0])
+
+
+def normalize_scores(X, types):
+    """
+    Normalize objective data.
+    types[i] = 'benefit' means larger is better.
+    types[i] = 'cost' means smaller is better.
+    Rows are criteria, columns are alternatives.
+    """
+    X = np.asarray(X, dtype=float)
+    Xn = np.zeros_like(X)
+    for i, t in enumerate(types):
+        row = X[i]
+        xmin, xmax = row.min(), row.max()
+        if np.isclose(xmax, xmin):
+            Xn[i] = 1.0
+        elif t == "benefit":
+            Xn[i] = (row - xmin) / (xmax - xmin)
+        elif t == "cost":
+            Xn[i] = (xmax - row) / (xmax - xmin)
+        else:
+            raise ValueError("types must be 'benefit' or 'cost'.")
+    return Xn
+
+
+def rank_by_ahp(criteria_matrix, score_matrix):
+    """Use criteria weights and standardized score matrix to rank alternatives."""
+    w, lambda_max, CI, CR = ahp_weights(criteria_matrix)
+    scores = w @ np.asarray(score_matrix, dtype=float)
+    order = np.argsort(-scores)  # descending order
+    return {
+        "weights": w,
+        "lambda_max": lambda_max,
+        "CI": CI,
+        "CR": CR,
+        "scores": scores,
+        "ranking_index": order
+    }
+
+
+if __name__ == "__main__":
+    A = np.array([
+        [1,   3,   5],
+        [1/3, 1,   2],
+        [1/5, 1/2, 1]
+    ], dtype=float)
+
+    X_std = np.array([
+        [0.90, 0.70, 0.40],
+        [0.60, 0.85, 0.75],
+        [0.80, 0.50, 0.90]
+    ], dtype=float)
+
+    result = rank_by_ahp(A, X_std)
+    print("weights =", np.round(result["weights"], 4))
+    print("lambda_max =", round(result["lambda_max"], 4))
+    print("CI =", round(result["CI"], 4))
+    print("CR =", round(result["CR"], 4))
+    print("scores =", np.round(result["scores"], 4))
+    print("ranking =", result["ranking_index"] + 1)
+\end{lstlisting}
+
+\section{写进论文时的规范性检查清单}
+\begin{enumerate}[leftmargin=2.2em]
+  \item 是否解释了为什么这是评价类问题，为什么适合 AHP？
+  \item 是否给出了目标层、准则层、方案层结构图？
+  \item 判断矩阵是否满足 $a_{ij}=1/a_{ji}$、$a_{ii}=1$？
+  \item 是否说明 1--9 标度含义和专家打分来源？
+  \item 是否计算了 $\lambda_{\max}$、$CI$、$RI$、$CR$？
+  \item 若有多层结构，是否做了层次总排序一致性检验？
+  \item 方案评分是否已经无量纲化、同向化？
+  \item 结论是否既有排名，又解释了关键影响指标？
+  \item 是否说明局限性和敏感性分析？
+\end{enumerate}
+
+\begin{thebibliography}{9}
+\bibitem{Saaty1987} Saaty, R. W. The analytic hierarchy process—what it is and how it is used. \emph{Mathematical Modelling}, 1987, 9(3--5): 161--176. DOI: 10.1016/0270-0255(87)90473-8.
+\bibitem{Salomon2024} Salomon, V. A. P. Consistency Improvement in the Analytic Hierarchy Process. \emph{Mathematics}, 2024, 12(6): 828.
+\bibitem{RI} ScienceDirect Topics. Consistency Index: Estimation of consistency ratio and random index table.
+\bibitem{Steps} 1000minds. What is the Analytic Hierarchy Process (AHP)? Structure hierarchy, pairwise comparison, weights, alternative evaluation, weighted-sum ranking.
+\bibitem{Zhao2022} 赵鑫，孙春花，沈贤. 基于层次分析法的城市生态环境质量评价[J]. 中国资源综合利用, 2022, 40(5): 163--166.
+\end{thebibliography}
+
+\end{document}

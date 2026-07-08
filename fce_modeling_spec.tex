@@ -1,0 +1,692 @@
+\documentclass[UTF8,zihao=-4,fontset=none]{ctexart}
+\usepackage[a4paper,margin=2.2cm]{geometry}
+\usepackage{amsmath,amssymb,bm}
+\usepackage{booktabs,longtable,array,multirow}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,fit,shapes.geometric,calc}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage{caption}
+\usepackage{float}
+\setCJKmainfont{Noto Serif CJK SC}
+\setCJKsansfont{Noto Sans CJK SC}
+\hypersetup{colorlinks=true,linkcolor=blue,urlcolor=blue,citecolor=blue}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.25em}
+\renewcommand{\arraystretch}{1.25}
+\lstset{
+  language=Python,
+  basicstyle=\ttfamily\small,
+  keywordstyle=\bfseries,
+  commentstyle=\itshape,
+  stringstyle=\ttfamily,
+  showstringspaces=false,
+  breaklines=true,
+  frame=single,
+  columns=fullflexible,
+  keepspaces=true,
+  tabsize=4
+}
+\title{模糊综合评价法（FCE）建模规范\\\large 理论原理、一级与多级模型、建模步骤、结论评价与 Python 代码}
+\author{适用于数学建模论文写作模板}
+\date{2026年7月}
+
+\begin{document}
+\maketitle
+\begin{abstract}
+模糊综合评价法（Fuzzy Comprehensive Evaluation, FCE）适合处理“指标较多、评价等级带有模糊边界、既有定量数据又有专家打分”的综合评价类问题。本文按数学建模论文写法，总结模糊综合评价的完整套路：确定因素集和权重，确定评语集，从最底层开始构造隶属度矩阵，再逐级合成得到最终评价向量。文中补充模糊集合、隶属函数、与概率统计的关系、一级与多级模糊综合评价模型、结果判定原则、常见问题和 Python 代码模板。
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+\section{方法适用场景与总流程}
+模糊综合评价的核心思想是：把评价对象在每个指标上的表现转化为对若干评语等级的\textbf{隶属度}，再用指标权重对隶属度进行加权合成，得到“该对象属于各评价等级的程度”。它适合回答以下问题：
+\begin{itemize}[leftmargin=2.2em]
+  \item 对象能否被评价为“优、良、中、差”或“高风险、中风险、低风险”；
+  \item 指标边界不清，例如“服务满意度高”“环境质量良好”“风险较大”；
+  \item 既有客观数据，又有问卷、专家评分或等级投票；
+  \item 评价对象较多，需要给出等级、排序或综合得分。
+\end{itemize}
+
+论文中可按以下五步组织：
+\begin{enumerate}[label=Step\arabic*：,leftmargin=3.2em]
+  \item \textbf{解决评价类问题。} 明确评价对象、评价目标和评价等级，说明该问题存在模糊性或多指标性。
+  \item \textbf{确定因素集与权重。} 构造因素集 $U$；若因素过多，可分层，或先用主成分分析法、相关性分析等方法降维；每一级权重均满足非负且和为 1。
+  \item \textbf{确定评语集。} 根据问题设置 $V=\{v_1,\ldots,v_m\}$。如果评语有评价色彩，可设为“优、良、中、差、劣”；如果无明显优劣，可设为“类型 1、类型 2、类型 3”。
+  \item \textbf{从最后一层开始确定隶属度。} 对底层指标建立隶属函数、专家频率或等级打分，得到隶属度矩阵 $R$，再逐级向上合成。
+  \item \textbf{根据隶属度确定评语并画图。} 可用最大隶属度原则给等级，也可用评语赋分得到综合得分；论文中应给出层级结构图、隶属函数示意图或综合评价向量图。
+\end{enumerate}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  node distance=1.05cm,
+  box/.style={rectangle,draw,rounded corners,align=center,minimum width=3.2cm,minimum height=0.75cm},
+  arr/.style={-{Latex[length=2mm]},thick}
+]
+\node[box,fill=gray!10] (p1) {评价类问题\\对象、目标、等级};
+\node[box,right=1.1cm of p1] (p2) {因素集 $U$ 与权重 $W$\\必要时分层或 PCA};
+\node[box,right=1.1cm of p2] (p3) {评语集 $V$\\有序或无序};
+\node[box,below=1.0cm of p2] (p4) {隶属度矩阵 $R$\\专家频率/隶属函数/数据映射};
+\node[box,right=1.1cm of p4] (p5) {综合评价向量 $B=W\circ R$\\等级、得分、排序};
+\draw[arr] (p1) -- (p2);
+\draw[arr] (p2) -- (p3);
+\draw[arr] (p3) -- (p4);
+\draw[arr] (p4) -- (p5);
+\draw[arr] (p2) -- (p4);
+\end{tikzpicture}
+\caption{模糊综合评价建模流程图}
+\label{fig:workflow}
+\end{figure}
+
+\section{理论原理：为什么可以使用模糊综合评价}
+\subsection{模糊集合与隶属度}
+在经典集合中，一个元素要么属于集合，要么不属于集合，通常用 0 或 1 表示。模糊集合把这种二值判断推广为 $[0,1]$ 上的连续取值。设论域为 $X$，模糊集 $\tilde A$ 可写为
+\begin{equation}
+  \tilde A=\{(x,\mu_{\tilde A}(x))\mid x\in X\}, \qquad
+  \mu_{\tilde A}:X\rightarrow [0,1].
+\end{equation}
+其中 $\mu_{\tilde A}(x)$ 称为 $x$ 对模糊集 $\tilde A$ 的隶属度。$\mu=1$ 表示完全属于，$\mu=0$ 表示完全不属于，中间值表示部分属于。
+
+这正适合建模论文中的评价问题。例如“环境质量良好”没有严格边界，PM2.5、绿化率、噪声等指标对“优、良、中、差”的归属往往是逐渐变化的，而不是突然从“良”变为“中”。因此，模糊综合评价用隶属度刻画评价等级之间的过渡，能比硬分类更符合实际。
+
+\subsection{隶属函数的常见形式}
+隶属函数的作用是把指标值 $x$ 映射到某个评语等级的隶属度。常见形式如下。
+
+\paragraph{1. 偏大型指标。} 指标越大越好，例如绿化率、满意度、合格率。可取
+\begin{equation}
+\mu(x)=
+\begin{cases}
+0, & x\le a,\\
+\dfrac{x-a}{b-a}, & a<x<b,\\
+1, & x\ge b.
+\end{cases}
+\end{equation}
+
+\paragraph{2. 偏小型指标。} 指标越小越好，例如污染浓度、事故率、成本。可取
+\begin{equation}
+\mu(x)=
+\begin{cases}
+1, & x\le a,\\
+\dfrac{b-x}{b-a}, & a<x<b,\\
+0, & x\ge b.
+\end{cases}
+\end{equation}
+
+\paragraph{3. 中间型或区间型指标。} 指标在某一区间最好，例如温度、湿度、库存周转区间。可用三角形或梯形隶属函数：
+\begin{equation}
+\mu(x)=
+\begin{cases}
+0, & x\le a,\\
+\dfrac{x-a}{b-a}, & a<x<b,\\
+1, & b\le x\le c,\\
+\dfrac{d-x}{d-c}, & c<x<d,\\
+0, & x\ge d.
+\end{cases}
+\end{equation}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[scale=0.95]
+  \draw[->] (0,0) -- (9,0) node[right] {$x$};
+  \draw[->] (0,0) -- (0,3.2) node[above] {$\mu(x)$};
+  \draw (0,2.7) node[left] {1};
+  \draw (0,0) node[left] {0};
+  \draw[thick] (0.7,0) -- (2.4,2.7) -- (4.1,0);
+  \node at (2.4,3.05) {三角形};
+  \draw[thick,dashed] (5.0,0) -- (6.0,2.7) -- (7.1,2.7) -- (8.2,0);
+  \node at (6.6,3.05) {梯形};
+  \foreach \x/\lab in {0.7/$a$,2.4/$b$,4.1/$c$,5.0/$a$,6.0/$b$,7.1/$c$,8.2/$d$}{\draw (\x,0.06)--(\x,-0.06) node[below] {\lab};}
+\end{tikzpicture}
+\caption{常用隶属函数示意图}
+\label{fig:membership}
+\end{figure}
+
+\subsection{与概率统计的关系}
+模糊综合评价与概率统计既有联系，也有区别。
+
+\paragraph{1. 概念区别。} 隶属度描述的是“属于某模糊概念的程度”，概率描述的是“随机事件发生的可能性”。例如“某城市空气质量属于良的隶属度为 0.7”并不等价于“该城市有 70\% 的概率是良”，前者是模糊边界下的程度，后者是随机事件的概率。
+
+\paragraph{2. 统计估计。} 在实际建模中，隶属度可以由样本频率估计。若 $N$ 位专家或受访者对指标 $u_i$ 给出等级评价，其中有 $n_{ij}$ 人选择评语 $v_j$，则
+\begin{equation}
+  r_{ij}=\frac{n_{ij}}{N}, \qquad \sum_{j=1}^m r_{ij}=1.
+\end{equation}
+此时 $r_{ij}$ 可解释为“群体判断下该指标对评语 $v_j$ 的隶属程度估计”。当 $N$ 较大且样本具有代表性时，频率型隶属度更稳定。其估计标准误可近似写为
+\begin{equation}
+  SE(r_{ij})\approx \sqrt{\frac{r_{ij}(1-r_{ij})}{N}}.
+\end{equation}
+
+\paragraph{3. 数据检验与稳健性。} 建模论文中可补充以下统计处理以增强可信度：
+\begin{itemize}[leftmargin=2.2em]
+  \item 对问卷数据：检查样本量、缺失值、异常值；必要时计算信度指标，如 Cronbach's alpha。
+  \item 对专家打分：可用均值、标准差、变异系数衡量专家意见分散程度；必要时剔除明显异常评分。
+  \item 对多个评价对象：可用 Bootstrap 对综合得分给出置信区间，或用敏感性分析检查权重变化对结论的影响。
+  \item 对指标过多或强相关：可用相关系数矩阵、主成分分析法（PCA）或因子分析减少冗余指标。
+\end{itemize}
+
+\subsection{使用该方法的建模假设}
+在论文“模型假设”中可写：
+\begin{enumerate}[label=H\arabic*：,leftmargin=3em]
+  \item \textbf{评价体系完备性假设。} 所选指标能够覆盖评价目标的主要影响因素，未纳入指标对最终评价影响较小。
+  \item \textbf{指标同向可比假设。} 各指标经过同向化、标准化或隶属函数转化后，均可在同一评语集上比较。
+  \item \textbf{权重稳定性假设。} 指标权重反映评价期内相对重要程度，且每一级权重非负、和为 1。
+  \item \textbf{隶属函数合理性假设。} 隶属函数或专家等级频率能够较好反映指标与评语等级之间的关系。
+  \item \textbf{加权合成假设。} 指标之间的综合影响可用加权平均或其他模糊算子近似表达；若存在严重交互作用，应在模型局限中说明。
+\end{enumerate}
+
+\section{一级模糊综合评价模型}
+\subsection{因素集、评语集与权重向量}
+设评价指标集合为
+\begin{equation}
+  U=\{u_1,u_2,\ldots,u_n\},
+\end{equation}
+评语集合为
+\begin{equation}
+  V=\{v_1,v_2,\ldots,v_m\}.
+\end{equation}
+若评语有顺序，可取 $V=\{\text{优},\text{良},\text{中},\text{差},\text{劣}\}$；若只是分类，则可取 $V=\{\text{类型 A},\text{类型 B},\text{类型 C}\}$。权重向量为
+\begin{equation}
+  W=(w_1,w_2,\ldots,w_n),\qquad w_i\ge 0,\quad \sum_{i=1}^n w_i=1.
+\end{equation}
+权重可由 AHP、熵权法、专家赋权、PCA 或组合赋权确定。若用 AHP，应另外给出判断矩阵和一致性检验；若用熵权或 PCA，应说明数据标准化和方差贡献率。
+
+\subsection{隶属度矩阵}
+对每个因素 $u_i$，计算其对每个评语 $v_j$ 的隶属度 $r_{ij}$，构成模糊关系矩阵
+\begin{equation}
+R=(r_{ij})_{n\times m}=\begin{pmatrix}
+r_{11} & r_{12} & \cdots & r_{1m}\\
+r_{21} & r_{22} & \cdots & r_{2m}\\
+\vdots & \vdots & \ddots & \vdots\\
+r_{n1} & r_{n2} & \cdots & r_{nm}
+\end{pmatrix}.
+\end{equation}
+若 $R$ 来源于专家投票频率，每行通常满足 $\sum_j r_{ij}=1$；若来源于多个重叠隶属函数，每行不一定天然为 1，可根据论文需要进行归一化。
+
+\subsection{模糊合成与评价向量}
+一级模糊综合评价的基本形式为
+\begin{equation}
+  B=W\circ R=(b_1,b_2,\ldots,b_m).
+\end{equation}
+最常用的是加权平均型算子：
+\begin{equation}
+  b_j=\sum_{i=1}^n w_i r_{ij},\qquad j=1,2,\ldots,m.
+\end{equation}
+也可使用最大-最小型算子：
+\begin{equation}
+  b_j=\max_i\{\min(w_i,r_{ij})\},
+\end{equation}
+但建模竞赛和评价论文中通常优先采用加权平均型，因为它更充分利用全部指标信息，结果也便于解释。
+
+\subsection{结论判定}
+设 $B=(b_1,\ldots,b_m)$。常见判定方法如下：
+\begin{enumerate}[leftmargin=2.2em]
+  \item \textbf{最大隶属度原则：} 若 $b_k=\max_j b_j$，则综合评价等级为 $v_k$。
+  \item \textbf{综合得分法：} 若评语有顺序，给评语赋分 $Q=(q_1,\ldots,q_m)$，则
+  \begin{equation}
+    S=BQ^T=\sum_{j=1}^m b_j q_j.
+  \end{equation}
+  得分 $S$ 可用于多个对象排序。
+  \item \textbf{归一化解释：} 若 $\sum_j b_j\ne 1$，可先令 $\hat b_j=b_j/\sum_j b_j$，再进行等级判断或计算得分。
+\end{enumerate}
+
+\section{多级模糊综合评价模型}
+\subsection{为什么需要多级模型}
+当指标很多时，直接把所有指标放在同一层会产生两个问题：一是权重过分分散，二是评价矩阵过大、解释性下降。此时应把因素集分解为若干子因素集：
+\begin{equation}
+  U=\{U_1,U_2,\ldots,U_s\}, \qquad
+  U_i=\{u_{i1},u_{i2},\ldots,u_{in_i}\}.
+\end{equation}
+每个子因素集内部先进行一次模糊综合评价，再把各子系统评价结果作为上一层的隶属度矩阵继续合成。
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  node distance=0.95cm,
+  box/.style={rectangle,draw,rounded corners,align=center,minimum width=2.5cm,minimum height=0.68cm},
+  small/.style={rectangle,draw,align=center,minimum width=1.95cm,minimum height=0.58cm},
+  arr/.style={-{Latex[length=2mm]},thick}
+]
+\node[box,fill=gray!10] (goal) {总目标 $G$};
+\node[box,below left=1.0cm and 2.6cm of goal] (u1) {$U_1$};
+\node[box,below=1.0cm of goal] (u2) {$U_2$};
+\node[box,below right=1.0cm and 2.6cm of goal] (us) {$U_s$};
+\node[small,below=0.85cm of u1] (u11) {$u_{11},\ldots,u_{1n_1}$};
+\node[small,below=0.85cm of u2] (u21) {$u_{21},\ldots,u_{2n_2}$};
+\node[small,below=0.85cm of us] (us1) {$u_{s1},\ldots,u_{sn_s}$};
+\node[box,below=1.0cm of u21,fill=gray!10] (v) {共同评语集 $V$};
+\draw[arr] (goal) -- (u1);\draw[arr] (goal) -- (u2);\draw[arr] (goal) -- (us);
+\draw[arr] (u1) -- (u11);\draw[arr] (u2) -- (u21);\draw[arr] (us) -- (us1);
+\draw[arr] (u11) -- (v);\draw[arr] (u21) -- (v);\draw[arr] (us1) -- (v);
+\node[draw,dashed,fit=(u1)(u2)(us),inner sep=0.25cm,label=left:{一级因素}]{ };
+\node[draw,dashed,fit=(u11)(u21)(us1),inner sep=0.25cm,label=left:{二级因素}]{ };
+\end{tikzpicture}
+\caption{多级模糊综合评价结构图模板}
+\label{fig:multi}
+\end{figure}
+
+\subsection{二级模糊综合评价计算}
+对第 $i$ 个一级因素 $U_i$，设其内部权重为
+\begin{equation}
+  W_i=(w_{i1},w_{i2},\ldots,w_{in_i}),\qquad \sum_{k=1}^{n_i}w_{ik}=1,
+\end{equation}
+隶属度矩阵为
+\begin{equation}
+  R_i=(r_{ikj})_{n_i\times m}.
+\end{equation}
+则第 $i$ 个一级因素的评价向量为
+\begin{equation}
+  B_i=W_iR_i=(b_{i1},b_{i2},\ldots,b_{im}).
+\end{equation}
+把所有 $B_i$ 按行组成上一层的隶属度矩阵：
+\begin{equation}
+  R^{(2)}=\begin{pmatrix}
+  B_1\\ B_2\\ \vdots\\ B_s
+  \end{pmatrix}_{s\times m}.
+\end{equation}
+设一级因素权重为
+\begin{equation}
+  A=(a_1,a_2,\ldots,a_s),\qquad \sum_{i=1}^s a_i=1,
+\end{equation}
+则最终评价向量为
+\begin{equation}
+  B=AR^{(2)}.
+\end{equation}
+
+\subsection{多级模型的论文表述模板}
+可直接写为：
+
+由于评价对象受多个层级因素共同影响，且各指标对评价等级的归属具有模糊性，本文采用多级模糊综合评价法。首先将因素集 $U$ 分解为若干一级因素 $U_i$，并在每个一级因素下设置二级指标；其次，依据专家评分、客观数据或隶属函数构造底层隶属度矩阵 $R_i$；再次，利用各级权重向量 $W_i$ 逐层进行模糊合成；最后依据最大隶属度原则和综合得分法确定评价等级与排序。该方法能够保留各评价等级的隶属信息，适用于边界不清、定性与定量指标并存的综合评价问题。
+
+\section{建模步骤规范：可直接写进论文}
+\subsection{Step1：明确评价目标与评价对象}
+写清楚评价目标 $G$、评价对象 $A_l$、评价期和数据来源。若只有一个对象，结论是等级评价；若有多个对象，结论是排序或等级比较。
+
+示例写法：本文以某对象的综合质量为评价目标，构建由若干一级指标和二级指标组成的评价体系。由于评价等级之间存在模糊边界，且指标既包括客观数据又包括专家打分，故采用模糊综合评价法进行建模。
+
+\subsection{Step2：确定因素集并计算权重}
+因素集可写为
+\begin{equation}
+  U=\{u_1,u_2,\ldots,u_n\}.
+\end{equation}
+多级情形写为
+\begin{equation}
+  U=\{U_1,U_2,\ldots,U_s\},\quad U_i=\{u_{i1},\ldots,u_{in_i}\}.
+\end{equation}
+权重计算要满足：
+\begin{equation}
+  w_i\ge 0,\qquad \sum_i w_i=1.
+\end{equation}
+权重来源可以是：专家赋权、AHP、熵权法、变异系数法、PCA 或组合赋权。若指标数量过多且相关性强，可先计算相关系数矩阵，删除高度重复指标，或用 PCA 提取主成分。
+
+\subsection{Step3：确定评语集}
+有评价色彩的评语集：
+\begin{equation}
+  V=\{\text{优},\text{良},\text{中},\text{差},\text{劣}\}.
+\end{equation}
+可对应分值
+\begin{equation}
+  Q=(100,80,60,40,20)
+\end{equation}
+或
+\begin{equation}
+  Q=(5,4,3,2,1).
+\end{equation}
+
+无评价色彩的评语集：
+\begin{equation}
+  V=\{\text{稳定型},\text{波动型},\text{风险型}\}.
+\end{equation}
+这种情况下不宜随意赋分，通常只用最大隶属度或类别解释。
+
+\subsection{Step4：逐级确定隶属度}
+底层隶属度可由三种方式得到。
+
+\paragraph{1. 专家投票频率法。} 若 $N$ 位专家对指标 $u_i$ 给出评语，选择 $v_j$ 的人数为 $n_{ij}$，则
+\begin{equation}
+  r_{ij}=\frac{n_{ij}}{N}.
+\end{equation}
+
+\paragraph{2. 隶属函数法。} 若有客观指标值 $x_i$，先确定指标类型和等级阈值，再用隶属函数得到 $r_{ij}$。
+
+\paragraph{3. 问卷量表法。} 若问卷选项本身就是评语等级，统计每个指标在各等级上的比例；若问卷是 1--5 分，可将分数区间映射到评语集。
+
+\subsection{Step5：模糊合成与结论评价}
+单层模型：
+\begin{equation}
+  B=WR.
+\end{equation}
+多层模型：
+\begin{equation}
+  B_i=W_iR_i,\\qquad R^{(2)}=(B_1,B_2,\ldots,B_s)^T,
+  \qquad B=AR^{(2)}.
+\end{equation}
+最终给出：
+\begin{itemize}[leftmargin=2.2em]
+  \item 综合评价向量 $B$；
+  \item 最大隶属度对应的评价等级；
+  \item 若评语有顺序，给出综合得分 $S=BQ^T$；
+  \item 若有多个对象，给出排序表和敏感性分析。
+\end{itemize}
+
+\section{指标过多时的处理：主成分分析与统计筛选}
+如果指标数量过多，直接建立模糊综合评价模型会导致权重过小、矩阵复杂、解释困难。可采用以下处理：
+\begin{enumerate}[leftmargin=2.2em]
+  \item \textbf{相关性筛选：} 若两个指标相关系数绝对值很高，可保留更有解释性的一个。
+  \item \textbf{PCA 降维：} 对标准化后的指标矩阵 $X$ 求协方差矩阵或相关矩阵的特征值与特征向量。第 $k$ 个主成分可写为
+  \begin{equation}
+    F_k=l_{k1}X_1+l_{k2}X_2+\cdots+l_{kp}X_p.
+  \end{equation}
+  选择累计方差贡献率达到 80\% 或 85\% 的前若干主成分，作为新因素或作为构造客观权重的依据。
+  \item \textbf{专家合并：} 将含义相近的指标合并为一个二级指标，保持论文解释性。
+\end{enumerate}
+
+注意：PCA 得到的是数据驱动的线性组合，解释性可能弱于原始指标。因此建模论文中建议写成“用于辅助筛选和降维”，而不是完全替代专业指标体系。
+
+\section{案例说明：城市生态环境质量评价}
+赵鑫等在城市生态环境质量评价中，将评价体系划分为自然环境、社会方面、经济方面、政策方面 4 个一级指标，并设置 21 个二级指标；文中先由 AHP 得到各级权重，再用模糊综合评价进行综合评价。其评语集采用五等级：优、良、中等、差、极差，对应区间分别为 $(0.8,1.0]$、$(0.6,0.8]$、$(0.4,0.6]$、$(0.2,0.4]$、$[0,0.2]$。
+
+以自然环境为例，其二级指标权重为
+\begin{equation}
+W_1=(0.221,0.170,0.203,0.238,0.168),
+\end{equation}
+对应隶属度矩阵为
+\begin{equation}
+R_1=\begin{pmatrix}
+0.76&0.56&0.63&0.55&0.64\\
+0.53&0.73&0.79&0.45&0.65\\
+0.62&0.43&0.45&0.35&0.84\\
+0.64&0.44&0.32&0.45&0.32\\
+0.44&0.42&0.34&0.23&0.41
+\end{pmatrix}.
+\end{equation}
+于是
+\begin{equation}
+B_1=W_1R_1=(0.6102,0.5104,0.4982,0.4148,0.5675).
+\end{equation}
+同理可得其他一级指标的评价向量：
+\begin{align}
+B_2&=(0.6203,0.6246,0.6469,0.6603,0.6390),\\
+B_3&=(0.6249,0.4688,0.5044,0.6279,0.5564),\\
+B_4&=(0.4867,0.4699,0.6166,0.4035,0.6035).
+\end{align}
+若一级权重为 $A=(0.316,0.342,0.191,0.151)$，则最终评价向量约为
+\begin{equation}
+B=(0.5978,0.5354,0.5681,0.5378,0.5953).
+\end{equation}
+根据最大隶属度原则，第一等级分量最大；若再结合等级区间或实际论文的评价规则，可进一步给出“中等”或相应等级解释。实际写作时，应说明采用的是“最大隶属度判别”还是“综合得分区间判别”，避免结论口径不一致。
+
+\section{论文中的结论评价模板}
+\subsection{单对象评价模板}
+由计算可得综合评价向量
+\begin{equation}
+  B=(b_1,b_2,\ldots,b_m).
+\end{equation}
+其中 $b_k$ 最大，说明评价对象对评语 $v_k$ 的隶属程度最高。若采用最大隶属度原则，则该对象综合等级为 $v_k$。若评语集为有序等级，并赋予分值 $Q$，则综合得分为 $S=BQ^T$，该得分位于 $[q_{k+1},q_k]$ 区间内，说明对象整体处于相邻等级之间，偏向 $v_k$。结合各一级指标评价向量可知，影响最终评价的主要短板为 $\cdots$，优势指标为 $\cdots$。
+
+\subsection{多对象排序模板}
+对每个评价对象 $A_l$ 分别计算综合评价向量 $B_l$ 和得分 $S_l$。根据 $S_l$ 由高到低排序可得
+\begin{equation}
+  A_{(1)}\succ A_{(2)}\succ \cdots \succ A_{(m)}.
+\end{equation}
+若相邻对象得分差距较小，应进一步进行权重敏感性分析或 Bootstrap 置信区间比较；若排序在合理扰动下保持不变，则说明结论较稳健。
+
+\subsection{模型优缺点评价}
+\textbf{优点：} 能处理模糊等级边界；能融合定量数据和定性判断；结果以隶属度向量呈现，解释性较强；适合多指标综合评价。
+
+\textbf{局限：} 隶属函数和权重具有一定主观性；若指标高度相关，可能重复计权；最大隶属度原则可能忽略次高等级信息；当样本量较小或专家意见分散时，隶属度稳定性不足。
+
+\textbf{改进：} 可结合 AHP、熵权法、PCA、灰色关联、TOPSIS 或 Bootstrap 敏感性分析，提高权重确定和结论检验的可靠性。
+
+\section{Python 代码模板}
+以下代码覆盖单层模糊综合评价、多级模糊综合评价、专家投票构造隶属度矩阵、PCA 辅助权重、Bootstrap 稳健性检验和柱状图绘制。
+
+\begin{lstlisting}
+import numpy as np
+import pandas as pd
+
+
+def normalize_weights(w):
+    """Return a non-negative weight vector whose sum is 1."""
+    w = np.asarray(w, dtype=float)
+    if np.any(w < 0):
+        raise ValueError("Weights must be non-negative.")
+    s = w.sum()
+    if s <= 0:
+        raise ValueError("The sum of weights must be positive.")
+    return w / s
+
+
+def normalize_rows(R):
+    """Normalize each row of a membership matrix."""
+    R = np.asarray(R, dtype=float)
+    if np.any(R < 0):
+        raise ValueError("Membership degrees must be non-negative.")
+    row_sums = R.sum(axis=1, keepdims=True)
+    if np.any(row_sums <= 0):
+        raise ValueError("Every row must have positive sum.")
+    return R / row_sums
+
+
+def fce_single_level(weights, R, scores=None, labels=None, normalize_R=False):
+    """
+    Single-level fuzzy comprehensive evaluation.
+    weights: length n
+    R: n by m membership matrix
+    scores: optional length m score vector for remarks
+    labels: optional length m remark labels
+    """
+    W = normalize_weights(weights)
+    R = np.asarray(R, dtype=float)
+    if normalize_R:
+        R = normalize_rows(R)
+    if R.shape[0] != len(W):
+        raise ValueError("R rows must match the number of weights.")
+
+    B = W @ R
+    if B.sum() > 0:
+        B_norm = B / B.sum()
+    else:
+        B_norm = B
+
+    k = int(np.argmax(B))
+    result = {
+        "B": B,
+        "B_normalized": B_norm,
+        "max_index": k,
+        "label": labels[k] if labels is not None else k
+    }
+    if scores is not None:
+        scores = np.asarray(scores, dtype=float)
+        if len(scores) != R.shape[1]:
+            raise ValueError("scores must match the number of remarks.")
+        result["score"] = float(B_norm @ scores)
+    return result
+
+
+def fce_multilevel(top_weights, sub_weights, sub_Rs,
+                   scores=None, labels=None, normalize_R=False):
+    """
+    Two-level fuzzy comprehensive evaluation.
+    top_weights: weights of first-level factors, length s
+    sub_weights: list of second-level weight vectors
+    sub_Rs: list of second-level membership matrices
+    """
+    if len(sub_weights) != len(sub_Rs):
+        raise ValueError("sub_weights and sub_Rs must have the same length.")
+
+    first_level_vectors = []
+    for w_i, R_i in zip(sub_weights, sub_Rs):
+        res_i = fce_single_level(w_i, R_i, normalize_R=normalize_R)
+        first_level_vectors.append(res_i["B"])
+
+    R_top = np.vstack(first_level_vectors)
+    final = fce_single_level(top_weights, R_top, scores=scores, labels=labels)
+    final["first_level_vectors"] = R_top
+    return final
+
+
+def membership_from_expert_votes(vote_counts):
+    """
+    Convert expert vote counts to a membership matrix.
+    vote_counts[i, j] is the number of experts selecting remark j for factor i.
+    """
+    return normalize_rows(vote_counts)
+
+
+def benefit_membership(x, a, b):
+    """Membership of a benefit-type indicator to a good grade."""
+    x = np.asarray(x, dtype=float)
+    return np.clip((x - a) / (b - a), 0, 1)
+
+
+def cost_membership(x, a, b):
+    """Membership of a cost-type indicator to a good grade."""
+    x = np.asarray(x, dtype=float)
+    return np.clip((b - x) / (b - a), 0, 1)
+
+
+def trapezoid_membership(x, a, b, c, d):
+    """Trapezoidal membership function."""
+    x = np.asarray(x, dtype=float)
+    y = np.zeros_like(x, dtype=float)
+    y = np.where((a < x) & (x < b), (x - a) / (b - a), y)
+    y = np.where((b <= x) & (x <= c), 1.0, y)
+    y = np.where((c < x) & (x < d), (d - x) / (d - c), y)
+    return np.clip(y, 0, 1)
+
+
+def pca_objective_weights(X, n_components=None):
+    """
+    PCA-assisted objective weights.
+    X: samples by indicators data matrix.
+    Requires scikit-learn. Use as an auxiliary method, not a black-box substitute.
+    """
+    from sklearn.preprocessing import StandardScaler
+    from sklearn.decomposition import PCA
+
+    X_std = StandardScaler().fit_transform(np.asarray(X, dtype=float))
+    pca = PCA(n_components=n_components)
+    pca.fit(X_std)
+    loadings = np.abs(pca.components_).T
+    contrib = pca.explained_variance_ratio_
+    raw = loadings @ contrib
+    return normalize_weights(raw), contrib
+
+
+def bootstrap_score_ci(counts, weights, scores, n_boot=2000, seed=0):
+    """
+    Bootstrap confidence interval for FCE score based on expert vote counts.
+    counts: n by m vote count matrix.
+    """
+    rng = np.random.default_rng(seed)
+    counts = np.asarray(counts, dtype=int)
+    n_factors, n_grades = counts.shape
+    boot_scores = []
+    for _ in range(n_boot):
+        boot_counts = np.zeros_like(counts)
+        for i in range(n_factors):
+            probs = counts[i] / counts[i].sum()
+            sample = rng.multinomial(counts[i].sum(), probs)
+            boot_counts[i] = sample
+        Rb = membership_from_expert_votes(boot_counts)
+        res = fce_single_level(weights, Rb, scores=scores)
+        boot_scores.append(res["score"])
+    return np.percentile(boot_scores, [2.5, 50, 97.5])
+
+
+if __name__ == "__main__":
+    labels = ["excellent", "good", "medium", "poor", "very poor"]
+    scores = [100, 80, 60, 40, 20]
+
+    # Example: natural environment in the urban ecological environment case.
+    W1 = [0.221, 0.170, 0.203, 0.238, 0.168]
+    R1 = [
+        [0.76, 0.56, 0.63, 0.55, 0.64],
+        [0.53, 0.73, 0.79, 0.45, 0.65],
+        [0.62, 0.43, 0.45, 0.35, 0.84],
+        [0.64, 0.44, 0.32, 0.45, 0.32],
+        [0.44, 0.42, 0.34, 0.23, 0.41],
+    ]
+    res = fce_single_level(W1, R1, scores=scores, labels=labels)
+    print("Natural environment B:", np.round(res["B"], 4))
+    print("Max-membership label:", res["label"])
+    print("Score:", round(res["score"], 2))
+
+    # Two-level example using four first-level factors.
+    top_weights = [0.316, 0.342, 0.191, 0.151]
+    W2 = [0.066, 0.207, 0.155, 0.111, 0.071, 0.111, 0.111, 0.168]
+    R2 = [
+        [0.36, 0.56, 0.36, 0.64, 0.54],
+        [0.54, 0.63, 0.54, 0.73, 0.45],
+        [0.55, 0.53, 0.56, 0.53, 0.62],
+        [0.54, 0.74, 0.73, 0.52, 0.43],
+        [0.52, 0.34, 0.74, 0.63, 0.83],
+        [0.56, 0.64, 0.62, 0.83, 0.82],
+        [0.91, 0.45, 0.76, 0.73, 0.83],
+        [0.83, 0.88, 0.82, 0.65, 0.74],
+    ]
+    W3 = [0.146, 0.141, 0.312, 0.110, 0.120, 0.170]
+    R3 = [
+        [0.65, 0.43, 0.65, 0.33, 0.76],
+        [0.94, 0.43, 0.64, 0.34, 0.64],
+        [0.54, 0.44, 0.37, 0.76, 0.43],
+        [0.54, 0.37, 0.43, 0.64, 0.62],
+        [0.62, 0.63, 0.78, 0.58, 0.82],
+        [0.56, 0.54, 0.37, 0.91, 0.32],
+    ]
+    W4 = [0.667, 0.333]
+    R4 = [
+        [0.55, 0.34, 0.51, 0.52, 0.72],
+        [0.36, 0.73, 0.83, 0.17, 0.37],
+    ]
+    final = fce_multilevel(top_weights, [W1, W2, W3, W4], [R1, R2, R3, R4],
+                           scores=scores, labels=labels)
+    print("First-level vectors:\n", np.round(final["first_level_vectors"], 4))
+    print("Final B:", np.round(final["B"], 4))
+    print("Final score:", round(final["score"], 2))
+\end{lstlisting}
+
+\section{结果表格与图形建议}
+论文中至少给出以下表格和图形：
+\begin{enumerate}[leftmargin=2.2em]
+  \item \textbf{评价指标体系图：} 展示目标层、一级因素、二级因素。
+  \item \textbf{权重表：} 每一级权重之和必须为 1；多级模型需列出局部权重和综合权重。
+  \item \textbf{隶属度矩阵表：} 每个因素对各评语等级的隶属度。
+  \item \textbf{综合评价向量表：} 给出 $B$、最大隶属度等级、综合得分。
+  \item \textbf{柱状图或雷达图：} 展示最终评价向量或一级指标得分，便于论文解释。
+\end{enumerate}
+
+\section{常见错误与检查清单}
+\begin{longtable}{p{0.26\textwidth}p{0.32\textwidth}p{0.32\textwidth}}
+\caption{模糊综合评价建模检查清单}\label{tab:check}\\
+\toprule
+检查项 & 常见错误 & 正确做法\\
+\midrule
+\endfirsthead
+\toprule
+检查项 & 常见错误 & 正确做法\\
+\midrule
+\endhead
+因素集 & 指标混乱，一级二级不分 & 先画层级结构图，明确每个指标所属层级\\
+权重 & 权重和不等于 1 & 每一级单独归一化，局部权重与综合权重要分清\\
+评语集 & 评语无顺序却强行赋分 & 有序评语才适合综合得分，无序类别只做隶属度判别\\
+隶属度 & 把原始数据直接当隶属度 & 先用频率、标准化或隶属函数映射到 $[0,1]$\\
+矩阵维度 & $W$ 与 $R$ 维度不匹配 & $W$ 长度等于 $R$ 的行数，$R$ 列数等于评语数\\
+多级评价 & 直接把所有指标一次性合成 & 先算底层 $B_i$，再把 $B_i$ 组成上一层矩阵\\
+结论 & 只说“最大值为某等级”不解释 & 同时解释主要优势、短板、敏感性和实际含义\\
+\bottomrule
+\end{longtable}
+
+\section{参考资料}
+\begin{enumerate}[leftmargin=2.2em]
+  \item Zadeh, L. A. Fuzzy Sets. \textit{Information and Control}, 1965, 8(3): 338--353. ScienceDirect 摘要说明，模糊集由取值在 0 到 1 之间的隶属函数刻画。
+  \item Xu, X.; Wang, J. A fuzzy comprehensive evaluation method based on the joint distribution dynamic membership degree for classification problems. \textit{Journal of Intelligent \& Fuzzy Systems}, 2024. 该文将 FCE 表示为 $B=W\circ R$，并说明其由因素、评语、模糊关系矩阵和权重向量组成。
+  \item SPSSAU 帮助文档：模糊综合评价。该文档给出指标项、评语、权重向量和判断矩阵的通俗解释，并总结了“确定评价指标和评语集、构造权重向量和矩阵、计算并决策评价”的操作流程。
+  \item 赵鑫，孙春花，沈贤. 基于层次分析法的城市生态环境质量评价. \textit{中国资源综合利用}, 2022, 40(5): 163--166. 该案例将 AHP 与模糊综合评价结合，用于城市生态环境质量评价。
+  \item Gewers, F. L. et al. Principal Component Analysis: A Natural Approach to Data Exploration. arXiv:1804.02502, 2018. 可作为 PCA 辅助降维的参考。
+\end{enumerate}
+
+\end{document}

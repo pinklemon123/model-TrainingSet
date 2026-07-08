@@ -1,0 +1,599 @@
+\documentclass[UTF8,a4paper,12pt,fontset=none]{ctexart}
+\usepackage{geometry}
+\geometry{left=2.4cm,right=2.4cm,top=2.3cm,bottom=2.5cm}
+\usepackage{fontspec}
+\setmainfont{DejaVu Serif}
+\setsansfont{DejaVu Sans}
+\setmonofont{DejaVu Sans Mono}
+\setCJKmainfont{Noto Serif CJK SC}
+\setCJKsansfont{Noto Sans CJK SC}
+\setCJKmonofont{Noto Sans Mono CJK SC}
+\usepackage{amsmath,amssymb,bm}
+\usepackage{booktabs,longtable,array,multirow}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric,calc,fit}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usepackage{caption}
+\usepackage{float}
+\usepackage{enumitem}
+\usepackage{listings}
+\usepackage{hyperref}
+\usepackage[most]{tcolorbox}
+\hypersetup{colorlinks=true,linkcolor=blue!50!black,citecolor=blue!50!black,urlcolor=blue!50!black}
+\definecolor{mainblue}{RGB}{23,58,109}
+\definecolor{lightblue}{RGB}{233,240,250}
+\definecolor{lightgray}{RGB}{247,247,247}
+\definecolor{codegreen}{RGB}{0,110,45}
+\definecolor{codepurple}{RGB}{110,35,140}
+\definecolor{codered}{RGB}{150,45,45}
+
+\ctexset{
+  section = {format=\Large\bfseries\sffamily\color{mainblue}},
+  subsection = {format=\large\bfseries\sffamily\color{mainblue}},
+  subsubsection = {format=\normalsize\bfseries\sffamily\color{mainblue}}
+}
+
+\newtcolorbox{paperbox}[1]{colback=lightblue,colframe=mainblue,title={#1},fonttitle=\bfseries,arc=2mm,boxrule=0.8pt}
+\newtcolorbox{warnbox}[1]{colback=orange!7,colframe=orange!60!black,title={#1},fonttitle=\bfseries,arc=2mm,boxrule=0.8pt}
+\newtcolorbox{keybox}[1]{colback=green!6,colframe=green!45!black,title={#1},fonttitle=\bfseries,arc=2mm,boxrule=0.8pt}
+
+\lstdefinestyle{pythonstyle}{
+  language=Python,
+  basicstyle=\small\ttfamily,
+  keywordstyle=\color{blue!60!black}\bfseries,
+  commentstyle=\color{codegreen},
+  stringstyle=\color{codered},
+  numberstyle=\tiny\color{gray},
+  numbers=left,
+  stepnumber=1,
+  numbersep=8pt,
+  showstringspaces=false,
+  breaklines=true,
+  breakatwhitespace=false,
+  columns=fullflexible,
+  keepspaces=true,
+  frame=single,
+  rulecolor=\color{gray!45},
+  backgroundcolor=\color{lightgray},
+  tabsize=4
+}
+\lstset{style=pythonstyle}
+
+\title{\bfseries\sffamily\color{mainblue} TOPSIS优劣解距离法建模规范\\\large 距离打分、正向化、标准化/归一化、权重确定与扩展模型}
+\author{适用于数学建模论文与综合评价类问题}
+\date{\today}
+
+\begin{document}
+\maketitle
+\begin{abstract}
+TOPSIS（Technique for Order Preference by Similarity to Ideal Solution）是一类常用的多指标综合评价与排序方法。其核心思想是：一个较优方案应当尽量靠近正理想解，远离负理想解。本文按照数学建模论文写法，整理TOPSIS的建模套路：明确评价对象，指标正向化，标准化或归一化，确定权重，构造正负理想解，计算欧氏距离与相对贴近度，最后给出排序、分级与结论分析。文中重点说明“距离打分”“标准化”“归一化”的区别，回答贴近度得分是否为归一化结果的问题，并补充AHP、熵权法、熵权TOPSIS、熵权模糊综合评价、TOPSIS与聚类等扩展方法。最后给出可直接运行的Python代码模板。
+\end{abstract}
+\tableofcontents
+\newpage
+
+\section{方法适用场景与总流程}
+
+\subsection{TOPSIS解决什么问题}
+TOPSIS适合解决以下类型的问题：
+\begin{itemize}[leftmargin=2em]
+  \item 多个评价对象需要排序，例如若干城市、企业、方案、月份、供应商、项目等；
+  \item 每个对象由多个指标刻画，而且指标方向不同，有些越大越好，有些越小越好；
+  \item 指标量纲不同，例如金额、比例、时间、浓度、评分不能直接相加；
+  \item 需要给出综合得分、排序、等级和短板分析。
+\end{itemize}
+
+TOPSIS不是预测模型，而是综合评价模型。它不是回答“未来会是多少”，而是回答“在当前指标体系和数据范围内，哪个对象更接近理想状态”。
+
+\begin{paperbox}{论文中可直接使用的表述}
+本文研究对象属于多指标综合评价与排序问题。各评价指标之间存在量纲差异和正负向差异，直接加权求和会造成指标不可比。TOPSIS法通过正向化和标准化处理，将原始指标转化为可比较的无量纲数据，再根据评价对象到正理想解和负理想解的距离计算相对贴近度。该方法能够同时考虑“接近最优”和“远离最差”两个方面，适用于本研究的综合评价与排序。
+\end{paperbox}
+
+\subsection{总流程}
+TOPSIS的完整建模流程如图\ref{fig:flow}所示。
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=9mm, every node/.style={font=\small},
+box/.style={rectangle,rounded corners,draw=mainblue,fill=lightblue,minimum width=36mm,minimum height=8mm,align=center},
+arrow/.style={-{Stealth[length=2.5mm]},thick,draw=mainblue}]
+\node[box] (a) {明确评价对象\\与指标体系};
+\node[box,below=of a] (b) {指标正向化\\最大型、最小型、中间型};
+\node[box,below=of b] (c) {标准化/无量纲化\\得到矩阵 $R$};
+\node[box,below=of c] (d) {确定权重 $W$\\AHP/熵权/组合赋权};
+\node[box,below=of d] (e) {加权标准化矩阵\\$V=(w_j r_{ij})$};
+\node[box,below=of e] (f) {确定正理想解\\与负理想解};
+\node[box,below=of f] (g) {计算距离\\$D_i^+,D_i^-$};
+\node[box,below=of g] (h) {相对贴近度\\$C_i=\frac{D_i^-}{D_i^+ + D_i^-}$};
+\node[box,below=of h] (i) {排序、分级\\结论评价};
+\foreach \x/\y in {a/b,b/c,c/d,d/e,e/f,f/g,g/h,h/i}{\draw[arrow] (\x)--(\y);} 
+\end{tikzpicture}
+\caption{TOPSIS综合评价建模流程图}
+\label{fig:flow}
+\end{figure}
+
+\section{理论原理：优劣解距离法为什么可用}
+
+\subsection{正理想解与负理想解}
+设有$n$个评价对象、$m$个评价指标。将原始数据正向化和标准化后，得到矩阵
+\[
+Z=(z_{ij})_{n\times m}.
+\]
+对每个指标，在所有评价对象中选取最大值构成正理想解，选取最小值构成负理想解：
+\[
+Z^+=(Z_1^+,Z_2^+,\ldots,Z_m^+),\qquad Z_j^+=\max_i z_{ij},
+\]
+\[
+Z^-=(Z_1^-,Z_2^-,\ldots,Z_m^-),\qquad Z_j^-=\min_i z_{ij}.
+\]
+正理想解代表“在每个指标上都达到样本内最好表现”的虚拟方案，负理想解代表“在每个指标上都达到样本内最差表现”的虚拟方案。
+
+对第$i$个评价对象，其到正理想解和负理想解的欧氏距离分别为
+\[
+D_i^+=\sqrt{\sum_{j=1}^{m}(Z_j^+-z_{ij})^2},\qquad
+D_i^-=\sqrt{\sum_{j=1}^{m}(Z_j^--z_{ij})^2}.
+\]
+由于越接近正理想解越好、越远离负理想解越好，所以定义相对贴近度
+\[
+C_i=\frac{D_i^-}{D_i^++D_i^-},\qquad 0\le C_i\le 1.
+\]
+$C_i$越大，说明第$i$个对象越接近正理想解、越远离负理想解，综合表现越好。
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[scale=1.0, every node/.style={font=\small}]
+\draw[thick,->] (0,0) -- (10,0) node[right]{综合理想方向};
+\filldraw[mainblue] (1.2,0) circle (2pt) node[below=4pt]{$Z^-$};
+\filldraw[mainblue] (8.8,0) circle (2pt) node[below=4pt]{$Z^+$};
+\filldraw[orange!80!black] (5.6,0) circle (2.5pt) node[above=6pt]{方案 $A_i$};
+\draw[<->,thick,orange!80!black] (1.2,0.45) -- node[above]{$D_i^-$} (5.6,0.45);
+\draw[<->,thick,red!70!black] (5.6,0.45) -- node[above]{$D_i^+$} (8.8,0.45);
+\node[align=center,draw=mainblue,fill=lightblue,rounded corners] at (5,-1.2) {贴近度 $C_i=\dfrac{D_i^-}{D_i^+ + D_i^-}$：\\离最差越远、离最好越近，得分越大。};
+\end{tikzpicture}
+\caption{TOPSIS相对贴近度的几何理解}
+\end{figure}
+
+\begin{warnbox}{这个得分是“归一化”的吗？}
+严格来说，$C_i$是一个\textbf{相对贴近度}，它被压缩在$[0,1]$区间内，因此有时会被口语化地称为“归一化得分”。但它不是概率，也不是权重，因为一般情况下
+\[
+\sum_{i=1}^n C_i\ne 1.
+\]
+所以论文中更规范的写法是“相对贴近度”“综合评价指数”或“TOPSIS得分”，不要把它解释为“第$i$个方案占总体的比例”。
+\end{warnbox}
+
+\subsection{数理统计角度的理解}
+从统计角度看，TOPSIS有三层含义：
+\begin{enumerate}[leftmargin=2em]
+  \item \textbf{样本相对性。} 正理想解和负理想解通常由当前样本的最大值和最小值给出，因此排序是相对于当前评价对象集而言的。若增加或删除评价对象，最值可能改变，排序也可能改变。
+  \item \textbf{无量纲比较。} 标准化把不同单位的指标放到同一数值尺度上，使欧氏距离具有可比性。
+  \item \textbf{距离综合。} 欧氏距离相当于把每个指标上的偏离量平方后累加，因此偏离较大的指标会被放大。若指标高度相关或存在极端值，应做敏感性分析。
+\end{enumerate}
+
+\section{距离法、标准化、归一化的区别与联系}
+
+很多建模错误来自把“距离法”“标准化”“归一化”混在一起。三者的关系可概括为表\ref{tab:diff}。
+
+\begin{longtable}{p{2.6cm}p{4.3cm}p{4.2cm}p{3.5cm}}
+\caption{距离法、标准化、归一化的区别}\label{tab:diff}\\
+\toprule
+名称 & 主要目的 & 常见公式 & 是否保证和为1\\
+\midrule
+\endfirsthead
+\toprule
+名称 & 主要目的 & 常见公式 & 是否保证和为1\\
+\midrule
+\endhead
+正向化 & 统一指标方向，使所有指标“越大越好” & 最小型：$x'_{ij}=\max_i x_{ij}-x_{ij}$ & 不保证\\
+标准化/无量纲化 & 消除量纲、数量级差异，使指标可比较 & 极差标准化：$r_{ij}=\frac{x'_{ij}-\min x'_j}{\max x'_j-\min x'_j}$；向量标准化：$r_{ij}=\frac{x'_{ij}}{\sqrt{\sum_i (x'_{ij})^2}}$ & 通常不保证\\
+距离打分 & 计算对象离理想解和负理想解的相对位置 & $C_i=\frac{D_i^-}{D_i^++D_i^-}$ & 不保证\\
+归一化（比例化） & 将一组非负数转成比例分布 & $p_{ij}=\frac{r_{ij}}{\sum_i r_{ij}}$ & 保证某一列或某一行和为1\\
+\bottomrule
+\end{longtable}
+
+\begin{keybox}{容易混淆的结论}
+\begin{itemize}[leftmargin=2em]
+  \item 极差标准化和TOPSIS贴近度都可使结果落到$[0,1]$，但它们一般不能使所有对象的得分和为1。
+  \item 概率型归一化不仅把数值转成非负比例，而且要求和为1，常用于熵权法中的$p_{ij}$。
+  \item TOPSIS中若不存在理论最大值或理论最小值，例如GDP增速、创新指数等，通常取当前数据集中的样本最值构造正负理想解，但论文中要说明评价结论具有样本相对性。
+  \item 标准化是为了消除量纲影响；距离法的几何意义是“方案在正负理想解之间的相对位置”。
+\end{itemize}
+\end{keybox}
+
+\section{建模假设与数据检查}
+
+\subsection{模型假设}
+论文中可写成如下形式：
+\begin{description}[leftmargin=2.5em,style=nextline]
+  \item[H1 可比性假设] 所有评价对象属于同类对象，所选指标体系对每个对象均适用。
+  \item[H2 单调性假设] 指标正向化后，指标值越大表示表现越好。
+  \item[H3 权重非负假设] 各指标权重满足$w_j\ge0$且$\sum_j w_j=1$。
+  \item[H4 样本理想解假设] 当缺少理论最优值和最差值时，用样本最大值和最小值近似构造正负理想解。
+  \item[H5 距离合成假设] 指标间综合差异可用欧氏距离近似表达；若指标高度相关，应考虑降维、相关性处理或改用马氏距离、CRITIC等方法。
+\end{description}
+
+\subsection{使用前的数据检查}
+\begin{table}[H]
+\centering
+\caption{TOPSIS建模前检查清单}
+\begin{tabular}{p{3cm}p{6cm}p{5cm}}
+\toprule
+检查项 & 判断内容 & 处理建议\\
+\midrule
+缺失值 & 是否存在空值、异常编码、不可用数据 & 删除、插补或重新采集\\
+指标方向 & 是否明确最大型、最小型、中间型、区间型 & 先正向化，再标准化\\
+量纲差异 & 是否存在不同单位、不同数量级 & 使用极差或向量标准化\\
+异常值 & 样本最大/最小值是否由极端值决定 & 箱线图、缩尾、敏感性分析\\
+相关性 & 指标是否高度重复 & 相关分析、PCA、指标合并\\
+权重来源 & 权重是否能解释 & AHP、熵权、组合赋权或CRITIC\\
+排序稳定性 & 权重或样本改变时排序是否大变 & 扰动权重、Bootstrap、秩相关检验\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{基础TOPSIS模型：可直接写进论文}
+
+\subsection{Step1：建立原始评价矩阵}
+设评价对象集为
+\[
+A=\{A_1,A_2,\ldots,A_n\},
+\]
+指标集为
+\[
+C=\{C_1,C_2,\ldots,C_m\}.
+\]
+原始数据矩阵为
+\[
+X=(x_{ij})_{n\times m}=\begin{bmatrix}
+ x_{11} & x_{12} & \cdots & x_{1m}\\
+ x_{21} & x_{22} & \cdots & x_{2m}\\
+ \vdots & \vdots & \ddots & \vdots\\
+ x_{n1} & x_{n2} & \cdots & x_{nm}
+\end{bmatrix}.
+\]
+其中$x_{ij}$表示第$i$个对象在第$j$个指标上的取值。
+
+\subsection{Step2：正向化处理}
+把所有指标转化为“越大越好”。常见处理如表\ref{tab:positive}。
+
+\begin{table}[H]
+\centering
+\caption{常见指标正向化公式}
+\label{tab:positive}
+\begin{tabular}{p{2.5cm}p{4.2cm}p{6.2cm}}
+\toprule
+指标类型 & 含义 & 正向化公式\\
+\midrule
+最大型 & 越大越好，如收益、合格率 & $x'_{ij}=x_{ij}$\\
+最小型 & 越小越好，如成本、污染、风险 & $x'_{ij}=\max_i x_{ij}-x_{ij}$，或在正数条件下用$1/x_{ij}$\\
+中间型 & 越接近目标$a_j$越好 & $x'_{ij}=1-\frac{|x_{ij}-a_j|}{\max_i |x_{ij}-a_j|}$\\
+区间型 & 落在$[a_j,b_j]$最好 & 令$d_{ij}=0$若$x_{ij}\in[a_j,b_j]$，否则为到区间的距离，取$x'_{ij}=1-\frac{d_{ij}}{\max_i d_{ij}}$\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Step3：标准化处理}
+正向化后得到$X'=(x'_{ij})$。常见标准化方式有两类。
+
+\subsubsection{极差标准化}
+\[
+r_{ij}=\frac{x'_{ij}-\min_i x'_{ij}}{\max_i x'_{ij}-\min_i x'_{ij}}.
+\]
+该方法直观，结果落在$[0,1]$，适合解释“线段比例”。但它受样本极值影响较大。
+
+\subsubsection{向量标准化}
+经典TOPSIS中常用向量标准化：
+\[
+r_{ij}=\frac{x'_{ij}}{\sqrt{\sum_{i=1}^{n}(x'_{ij})^2}}.
+\]
+该方法使每个指标列的平方和为1，适合后续欧氏距离计算。注意：它不是让每列普通求和为1。
+
+\subsection{Step4：确定指标权重}
+设权重向量为
+\[
+W=(w_1,w_2,\ldots,w_m),\qquad w_j\ge0,\quad \sum_{j=1}^{m}w_j=1.
+\]
+权重可由AHP、熵权法、CRITIC、PCA或主客观组合赋权确定。
+
+\subsection{Step5：构造加权标准化矩阵}
+\[
+v_{ij}=w_j r_{ij},\qquad V=(v_{ij})_{n\times m}.
+\]
+
+\subsection{Step6：确定正理想解与负理想解}
+由于已经正向化，各指标均为越大越好，因此
+\[
+V^+=(\max_i v_{i1},\max_i v_{i2},\ldots,\max_i v_{im}),
+\]
+\[
+V^-=(\min_i v_{i1},\min_i v_{i2},\ldots,\min_i v_{im}).
+\]
+
+\subsection{Step7：计算距离与相对贴近度}
+\[
+D_i^+=\sqrt{\sum_{j=1}^{m}(v_{ij}-V_j^+)^2},\qquad
+D_i^-=\sqrt{\sum_{j=1}^{m}(v_{ij}-V_j^-)^2}.
+\]
+\[
+C_i=\frac{D_i^-}{D_i^++D_i^-}.
+\]
+按$C_i$从大到小排序，得到方案优劣顺序。
+
+\section{权重如何确定：AHP、熵权法与组合赋权}
+
+\subsection{AHP：主观权重}
+若指标重要性需要体现专家经验，可采用层次分析法。构造判断矩阵
+\[
+A=(a_{ij})_{m\times m},\qquad a_{ij}>0,\quad a_{ij}=\frac{1}{a_{ji}},\quad a_{ii}=1.
+\]
+求最大特征值$\lambda_{\max}$对应的特征向量，归一化后得到权重$W$。一致性检验为
+\[
+CI=\frac{\lambda_{\max}-m}{m-1},\qquad CR=\frac{CI}{RI}.
+\]
+当$CR<0.10$时，通常认为判断矩阵一致性可以接受。
+
+\subsection{熵权法：客观权重}
+若希望减少主观干预，可用熵权法。设正向化、标准化后的非负矩阵为$R=(r_{ij})$。先比例化：
+\[
+p_{ij}=\frac{r_{ij}}{\sum_{i=1}^{n}r_{ij}}.
+\]
+第$j$个指标的信息熵为
+\[
+e_j=-\frac{1}{\ln n}\sum_{i=1}^{n}p_{ij}\ln p_{ij}.
+\]
+差异系数为
+\[
+g_j=1-e_j.
+\]
+熵权为
+\[
+w_j=\frac{g_j}{\sum_{j=1}^{m}g_j}.
+\]
+
+\begin{warnbox}{熵权法的正确解释}
+熵权反映的是指标在当前样本中的离散程度和区分能力。某指标熵权高，说明它在当前评价对象之间差异较大，对排序区分贡献较强；这不等价于它在现实意义上一定最重要。若研究中存在明显的政策偏好、专业重要性或安全底线，应使用AHP-熵权组合赋权，而不是单独使用熵权。
+\end{warnbox}
+
+\subsection{主客观组合赋权}
+设AHP权重为$a_j$，熵权为$b_j$。常见组合方式有：
+\[
+w_j=\alpha a_j+(1-\alpha)b_j,\qquad 0\le \alpha\le1.
+\]
+当没有明显偏好时，可取$\alpha=0.5$。也可用乘法合成：
+\[
+w_j=\frac{a_jb_j}{\sum_{k=1}^{m}a_kb_k}.
+\]
+
+\section{熵权TOPSIS模型}
+
+熵权TOPSIS的思想是：先用熵权法根据数据差异确定客观权重，再把权重代入TOPSIS计算相对贴近度。其步骤为：
+\begin{enumerate}[leftmargin=2em]
+  \item 建立原始矩阵$X$；
+  \item 对最小型、中间型、区间型指标进行正向化；
+  \item 用极差标准化得到非负矩阵$R$，计算熵值$e_j$、差异系数$g_j$和熵权$w_j$；
+  \item 用向量标准化或极差标准化构造TOPSIS矩阵；
+  \item 得到加权标准化矩阵$V$；
+  \item 确定$V^+$和$V^-$；
+  \item 计算$D_i^+,D_i^-$和$C_i$；
+  \item 根据$C_i$排序，结合指标贡献进行结论评价。
+\end{enumerate}
+
+\begin{paperbox}{论文中可直接使用的模型选择论证}
+本文评价对象具有多指标、多量纲、正负向并存的特点。TOPSIS能够通过正负理想解距离刻画评价对象的综合优劣，但其结果依赖指标权重。为降低专家赋权的主观性，本文采用熵权法根据指标数据的离散程度确定客观权重，再结合TOPSIS计算相对贴近度。该组合模型既保留了TOPSIS“接近最优、远离最差”的几何意义，又使权重确定更依赖客观数据，适用于评价数据较完整、需要进行综合排序的场景。
+\end{paperbox}
+
+\section{熵权模糊综合评价：当结论需要“等级”时}
+
+TOPSIS主要输出排序和相对贴近度。如果题目要求把对象归入“优、良、中、差”或“高风险、中风险、低风险”，可采用熵权模糊综合评价。
+
+设因素集为
+\[
+U=\{u_1,u_2,\ldots,u_m\},
+\]
+评语集为
+\[
+V=\{v_1,v_2,\ldots,v_s\},
+\]
+例如$V=\{\text{优},\text{良},\text{中},\text{差}\}$。由熵权法得到权重
+\[
+W=(w_1,w_2,\ldots,w_m).
+\]
+构造隶属度矩阵
+\[
+R=\begin{bmatrix}
+r_{11}&r_{12}&\cdots&r_{1s}\\
+r_{21}&r_{22}&\cdots&r_{2s}\\
+\vdots&\vdots&\ddots&\vdots\\
+r_{m1}&r_{m2}&\cdots&r_{ms}
+\end{bmatrix}.
+\]
+综合评价向量为
+\[
+B=WR=(b_1,b_2,\ldots,b_s).
+\]
+若采用最大隶属度原则，$b_k=\max_j b_j$，则综合等级为$v_k$。若评语有分值$Q=(q_1,\ldots,q_s)$，综合得分为
+\[
+S=BQ^T.
+\]
+
+\begin{keybox}{什么时候用熵权TOPSIS，什么时候用熵权FCE？}
+若目标是\textbf{排序}，优先用熵权TOPSIS；若目标是\textbf{等级评价}，且等级边界模糊，优先用熵权模糊综合评价；若既要排序又要等级，可先用TOPSIS得到排序，再用聚类或阈值分级，也可用FCE得到等级和得分。
+\end{keybox}
+
+\section{案例：五个方案的熵权TOPSIS评价}
+
+设有5个方案，5个指标。指标中“效益率、满意度、发展潜力”为最大型指标，“成本、风险”为最小型指标。原始数据如表\ref{tab:data}。
+
+\begin{table}[H]
+\centering
+\caption{原始评价数据示例}
+\label{tab:data}
+\begin{tabular}{lccccc}
+\toprule
+方案 & 效益率 & 成本 & 风险 & 满意度 & 发展潜力\\
+\midrule
+A1 & 82 & 68 & 3.2 & 78 & 70\\
+A2 & 76 & 55 & 4.1 & 85 & 82\\
+A3 & 90 & 72 & 2.8 & 74 & 76\\
+A4 & 68 & 48 & 3.5 & 80 & 88\\
+A5 & 84 & 60 & 2.9 & 90 & 79\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+经正向化、极差标准化和熵权计算，得到表\ref{tab:weights}。
+\begin{table}[H]
+\centering
+\caption{熵值、差异系数与权重}
+\label{tab:weights}
+\begin{tabular}{lccc}
+\toprule
+指标 & 熵值$e_j$ & 差异系数$g_j$ & 熵权$w_j$\\
+\midrule
+效益率 & 0.8255 & 0.1745 & 0.1796\\
+成本 & 0.7701 & 0.2299 & 0.2365\\
+风险 & 0.8367 & 0.1633 & 0.1680\\
+满意度 & 0.7820 & 0.2180 & 0.2242\\
+发展潜力 & 0.8137 & 0.1863 & 0.1917\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+可以看出，成本和满意度的权重较高，说明它们在当前五个方案中的差异较明显，对方案区分贡献较大。进一步用TOPSIS计算相对贴近度，结果如表\ref{tab:result}。
+
+\begin{table}[H]
+\centering
+\caption{TOPSIS距离与相对贴近度}
+\label{tab:result}
+\begin{tabular}{lcccc}
+\toprule
+方案 & $D_i^+$ & $D_i^-$ & $C_i$ & 排序\\
+\midrule
+A4 & 0.0620 & 0.1850 & 0.7488 & 1\\
+A5 & 0.0897 & 0.1343 & 0.5995 & 2\\
+A2 & 0.1185 & 0.1272 & 0.5178 & 3\\
+A3 & 0.1788 & 0.1078 & 0.3760 & 4\\
+A1 & 0.1534 & 0.0801 & 0.3429 & 5\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+width=11.5cm,height=6cm,
+ybar,bar width=16pt,
+ymin=0,ymax=0.28,
+ylabel={熵权},
+symbolic x coords={效益率,成本,风险,满意度,发展潜力},
+xtick=data,
+nodes near coords,
+every node near coord/.append style={font=\scriptsize},
+axis lines=left,
+ymajorgrids=true,
+grid style={gray!25}
+]
+\addplot[fill=mainblue!55,draw=mainblue] coordinates {(效益率,0.1796) (成本,0.2365) (风险,0.1680) (满意度,0.2242) (发展潜力,0.1917)};
+\end{axis}
+\end{tikzpicture}
+\caption{示例指标熵权柱状图}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+width=11.5cm,height=6cm,
+ymin=0,ymax=0.85,
+ylabel={TOPSIS相对贴近度},
+xlabel={方案},
+symbolic x coords={A1,A2,A3,A4,A5},
+xtick=data,
+mark=* ,
+ymajorgrids=true,
+grid style={gray!25}
+]
+\addplot[mainblue,thick] coordinates {(A1,0.3429) (A2,0.5178) (A3,0.3760) (A4,0.7488) (A5,0.5995)};
+\end{axis}
+\end{tikzpicture}
+\caption{示例方案相对贴近度折线图}
+\end{figure}
+
+\begin{paperbox}{案例结论写法}
+由熵权计算结果可知，成本和满意度权重较高，说明这两个指标在当前方案之间差异较明显，是影响综合排序的重要因素。TOPSIS评价结果显示，$A4$的相对贴近度最高，说明其综合表现最接近正理想解且远离负理想解；$A5$次之，$A1$最低。后续若需要改进$A1$，应优先分析其在成本、满意度和发展潜力等高权重指标上的短板。需要注意的是，$C_i$是相对贴近度，不是概率；本结论只在当前五个方案和当前指标体系下成立。
+\end{paperbox}
+
+\section{结果评价与论文写作模板}
+
+\subsection{单次评价模板}
+\begin{paperbox}{结果评价模板}
+根据TOPSIS模型计算得到各评价对象的相对贴近度$C_i$。其中，$A_k$的$C_k$最大，说明该对象到正理想解的距离较小、到负理想解的距离较大，综合表现最好；$A_l$的$C_l$最小，说明其综合表现相对较弱。结合指标权重可知，影响排序的主要指标为\underline{\hspace{3cm}}。因此，在后续改进中应重点关注\underline{\hspace{3cm}}等方面。
+\end{paperbox}
+
+\subsection{分级评价模板}
+若需要把$C_i$转化为等级，可人为设定阈值。例如：
+\begin{table}[H]
+\centering
+\caption{TOPSIS贴近度等级划分示例}
+\begin{tabular}{ccccc}
+\toprule
+区间 & $[0.8,1]$ & $[0.6,0.8)$ & $[0.4,0.6)$ & $[0,0.4)$\\
+\midrule
+等级 & 优 & 良 & 中 & 差\\
+\bottomrule
+\end{tabular}
+\end{table}
+但阈值不应随意设置，最好依据行业标准、历史分位数、专家意见或聚类结果确定。
+
+\subsection{模型优缺点评价}
+\textbf{优点：} 思路直观，既考虑接近最优，也考虑远离最差；计算简单，适合多对象排序；可与AHP、熵权法、模糊综合评价、聚类等方法结合。\par
+\textbf{局限：} 对标准化方式和权重较敏感；样本极值会影响正负理想解；若新增评价对象，排序可能发生变化；若指标高度相关，欧氏距离可能重复计算相似信息。\par
+\textbf{改进：} 可进行权重扰动分析、剔除异常值后重算、使用组合赋权、加入聚类分级，或采用灰色关联TOPSIS、VIKOR、PROMETHEE等方法进行对比。
+
+\section{可拓展方法与论文实例思路}
+
+\subsection{熵权TOPSIS与聚类分级}
+若TOPSIS只给排序而题目还需要等级，可以对$C_i$进行K-means聚类或按分位数分组。例如，已有研究将熵权TOPSIS用于多指标脆弱性评价，并进一步用K-means划分等级。这类思路适合“排序+分级”的问题。
+
+\subsection{熵权模糊综合评价}
+当评价等级边界本身具有模糊性，如“水环境安全”“城市生态质量”“满意度等级”，可用熵权确定指标权重，再构造隶属度矩阵进行模糊综合评价。其优点是结论不只是一个排序，还能给出属于各评价等级的程度。
+
+\subsection{AHP-熵权-TOPSIS组合模型}
+AHP体现专家经验，熵权体现数据差异，TOPSIS给出综合排序。该模型适合既有主观偏好又有客观数据的政策、工程、经济、生态评价。
+
+\subsection{CRITIC、PCA与其他客观赋权}
+CRITIC法同时考虑指标波动性和指标间冲突性；PCA适合指标较多且高度相关时降维；变异系数法计算简单但较粗略。建模时可以把这些方法作为熵权法的对比或稳健性检验。
+
+\subsection{稳健性与敏感性分析}
+建议至少做一种检验：
+\begin{itemize}[leftmargin=2em]
+  \item 权重扰动：令$w_j$在$\pm 5\%$或$\pm 10\%$范围内变化，观察排序是否改变；
+  \item 标准化对比：分别使用极差标准化和向量标准化，比较排序差异；
+  \item 异常值处理：缩尾或剔除极端对象后重算；
+  \item 排序一致性：用Spearman秩相关系数比较不同方法结果；
+  \item Bootstrap：对样本对象或调查样本重复抽样，估计得分置信区间。
+\end{itemize}
+
+\section{Python代码模板}
+下面代码包含正向化、标准化、熵权、AHP权重、TOPSIS、熵权TOPSIS和熵权模糊综合评价。可直接保存为\texttt{topsis\_model.py}运行。
+
+\lstinputlisting{topsis_model.py}
+
+\section{总结}
+TOPSIS的核心不是简单加权平均，而是通过正负理想解构造几何距离，衡量每个评价对象在多指标空间中的相对位置。建模时要先正向化，再标准化，之后确定权重并计算相对贴近度。$C_i$落在$[0,1]$，但不是概率，也不保证所有对象得分和为1。若权重来自AHP，模型更能体现专家偏好；若权重来自熵权法，模型更客观但更依赖样本离散程度；若评价等级边界模糊，可扩展为熵权模糊综合评价；若需要分级，可结合聚类或阈值划分。完整论文中应同时给出指标体系、标准化公式、权重表、距离表、排序图和敏感性分析，避免只给一个最终排名。
+
+\begingroup\raggedright
+\begin{thebibliography}{99}
+\bibitem{hwang} Hwang, C.-L., Yoon, K. \textit{Multiple Attribute Decision Making: Methods and Applications}. Springer, 1981.
+\bibitem{sciencedirect_topsis} ScienceDirect Topics. Technique for Order Preference by Similarity to Ideal Solution. \url{https://www.sciencedirect.com/topics/engineering/technique-for-order-preference-by-similarity-to-ideal-solution}
+\bibitem{chakraborty2022} Chakraborty, S. TOPSIS and Modified TOPSIS: A comparative analysis. \textit{Decision Analytics Journal}, 2022. \url{https://www.sciencedirect.com/science/article/pii/S277266222100014X}
+\bibitem{chen2021} Chen, P. Effects of the entropy weight on TOPSIS. \textit{Expert Systems with Applications}, 2021. \url{https://doi.org/10.1016/j.eswa.2020.114186}
+\bibitem{shannon1948} Shannon, C. E. A Mathematical Theory of Communication. \textit{Bell System Technical Journal}, 1948. \url{https://people.math.harvard.edu/~ctm/home/text/others/shannon/entropy/entropy.pdf}
+\bibitem{ding2017} Ding, X.; Chong, X.; Bao, Z.; Xue, Y.; Zhang, S. Fuzzy Comprehensive Assessment Method Based on the Entropy Weight Method and Its Application in the Water Environmental Safety Evaluation. \textit{Water}, 2017, 9(5), 329. \url{https://doi.org/10.3390/w9050329}
+\bibitem{peng2024} Peng, N. et al. A vulnerability evaluation method of earthen sites based on entropy weight-TOPSIS and K-means clustering. \textit{npj Heritage Science}, 2024. \url{https://www.nature.com/articles/s40494-024-01273-7}
+\end{thebibliography}
+\endgroup
+
+\end{document}
