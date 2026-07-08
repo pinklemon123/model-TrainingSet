@@ -1,0 +1,817 @@
+\documentclass[UTF8,12pt,a4paper]{ctexart}
+\usepackage{geometry}
+\geometry{left=2.2cm,right=2.2cm,top=2.4cm,bottom=2.4cm}
+\usepackage{amsmath,amssymb,bm}
+\usepackage{booktabs,array,longtable,tabularx}
+\usepackage{xcolor}
+\usepackage{tcolorbox}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage{fancyhdr}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning}
+\hypersetup{colorlinks=true,linkcolor=blue!60!black,urlcolor=blue!60!black}
+\definecolor{mainblue}{RGB}{31,72,124}
+\definecolor{lightblue}{RGB}{235,244,255}
+\definecolor{lightgray}{RGB}{248,248,248}
+\definecolor{darkgreen}{RGB}{0,100,70}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{规划模型手算例题集}
+\fancyhead[R]{\thepage}
+\setlength{\headheight}{15pt}
+\setlist[itemize]{topsep=2pt,itemsep=2pt,parsep=0pt}
+\setlist[enumerate]{topsep=2pt,itemsep=2pt,parsep=0pt}
+\tcbuselibrary{skins,breakable}
+\newtcolorbox{examplebox}[1]{breakable,enhanced,colback=lightblue,colframe=mainblue,fonttitle=\bfseries,title=#1,boxrule=0.8pt,arc=2mm,left=1.5mm,right=1.5mm,top=1mm,bottom=1mm}
+\newtcolorbox{solbox}[1]{breakable,enhanced,colback=lightgray,colframe=black!50,fonttitle=\bfseries,title=#1,boxrule=0.6pt,arc=2mm,left=1.5mm,right=1.5mm,top=1mm,bottom=1mm}
+\newcommand{\keypoint}[1]{\textcolor{mainblue}{\textbf{#1}}}
+\newcommand{\conclusion}[1]{\par\smallskip\noindent\textcolor{darkgreen}{\textbf{结论：}}#1\par\smallskip}
+
+\title{\heiti 规划模型手算例题集\\\large 线性规划、整数规划、0--1规划、蒙特卡洛、非线性规划、目标规划与现代优化补充}
+\author{数学建模复习讲义}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+本讲义是在规划模型建模规范的基础上整理的手算例题集。每一类模型都给出一道尽量简单、适合在纸上计算的例题，并按“题目--建模--手算--结论”的格式说明。重点不是追求大规模数值求解，而是帮助判断：题目属于哪类规划、决策变量怎么设、目标函数怎么写、约束条件怎么转化，以及最后如何解释最优方案。文末补充了凸优化、二次规划、动态规划、网络流、运输问题、随机规划、鲁棒优化、启发式和机器学习结合优化的简单例题。
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+\section{总思路：所有规划题都先抓三件事}
+规划模型与评价模型不同。评价模型常回答“哪个对象更好”，规划模型回答“应该怎么安排、怎么选择、怎么分配”。所以做题时先写三件事：
+\[
+\boxed{\text{决策变量}}\quad \boxed{\text{目标函数}}\quad \boxed{\text{约束条件}}.
+\]
+一般形式为
+\[
+\min f(x),\qquad \text{s.t. } g_i(x)\le 0,
+\quad h_j(x)=0,\quad x\in X.
+\]
+其中 $x\in X$ 表示变量类型，如连续变量、整数变量、0--1变量、路径变量或随机情景变量。
+
+\begin{center}
+\begin{tabularx}{\textwidth}{>{\bfseries}p{3.4cm}X}
+\toprule
+模型类型 & 最容易识别的题目特征\\
+\midrule
+线性规划 & 目标和约束都是一次式，变量可以连续取值。\\
+整数规划 & 数量必须是整数，如人数、车数、机器台数、批次数。\\
+0--1规划 & 是否选择、是否建设、是否分配、是否走某条边。\\
+蒙特卡洛法 & 参数随机、不确定，想看平均收益、风险概率、分布。\\
+非线性规划 & 目标或约束含平方、乘积、对数、指数等非线性关系。\\
+目标规划 & 多个目标都有期望值，不要求单一目标最优，而是尽量少偏离。\\
+凸优化/QP & 目标是凸函数，约束是凸集；可保证局部最优就是全局最优。\\
+动态规划 & 多阶段决策，每一步影响下一步状态。\\
+网络优化 & 出现节点、边、路径、流量、容量、运输。\\
+随机/鲁棒优化 & 需求、价格、成本不确定，考虑期望或最坏情况。\\
+启发式/元启发式 & 规模太大或难以精确求解，先求一个较好可行解。\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\newpage
+\section{线性规划 LP：顶点枚举法}
+\begin{examplebox}{例题 1：生产计划问题}
+某工厂生产甲、乙两种产品。设甲产品产量为 $x$，乙产品产量为 $y$。利润分别为每件 3 元和 2 元。资源约束为
+\[
+x+y\le 4,
+\qquad x\le 2,
+\qquad y\le 3,
+\qquad x,y\ge 0.
+\]
+求最大利润。
+\end{examplebox}
+
+\begin{solbox}{建模与手算}
+建立线性规划模型：
+\[
+\max Z=3x+2y,
+\quad
+\text{s.t. } x+y\le 4,
+\;x\le 2,
+\;y\le 3,
+\;x,y\ge 0.
+\]
+线性规划在二维时，最优解通常出现在可行域顶点。枚举顶点：
+\[
+(0,0),\;(2,0),\;(2,2),\;(1,3),\;(0,3).
+\]
+计算目标函数：
+\[
+\begin{array}{c|ccccc}
+(x,y)&(0,0)&(2,0)&(2,2)&(1,3)&(0,3)\\
+\hline
+Z&0&6&10&9&6
+\end{array}
+\]
+最大值为 $10$，在 $(x,y)=(2,2)$ 取得。
+\end{solbox}
+\conclusion{应生产甲产品 2 件、乙产品 2 件，最大利润为 10 元。线性规划题在纸上最常用方法是画可行域或枚举顶点。}
+
+\section{整数规划 IP：变量不能拆分时枚举}
+\begin{examplebox}{例题 2：整数生产问题}
+某小作坊生产 A、B 两类产品，设产量分别为 $x,y$，且必须为非负整数。利润为
+\[
+Z=5x+4y.
+\]
+资源约束为
+\[
+2x+y\le 5,
+\qquad x+y\le 4,
+\qquad x,y\in\mathbb Z_{\ge 0}.
+\]
+求最大利润。
+\end{examplebox}
+
+\begin{solbox}{建模与手算}
+由于 $x,y$ 必须是整数，不能直接只求连续最优。枚举 $x$ 的可能值。由 $2x+y\le 5$ 可知 $x=0,1,2$。
+\[
+\begin{array}{c|c|c|c}
+x&y\text{ 的最大可行值}&\text{取 }y&Z=5x+4y\\
+\hline
+0&\min(5,4)=4&4&16\\
+1&\min(3,3)=3&3&17\\
+2&\min(1,2)=1&1&14
+\end{array}
+\]
+最大值为 $17$，在 $(x,y)=(1,3)$ 取得。
+\end{solbox}
+\conclusion{整数规划的关键是变量必须取整数。小题可直接枚举；大题要用分支定界、割平面或整数规划求解器。}
+
+\section{0--1规划 BIP：选或不选}
+\begin{examplebox}{例题 3：背包选择问题}
+有三个项目可选，收益和占用资源如下：
+\[
+\begin{array}{c|ccc}
+\text{项目}&1&2&3\\
+\hline
+\text{收益}&6&5&4\\
+\text{资源}&4&3&2
+\end{array}
+\]
+总资源不超过 $5$。每个项目只能选或不选，求最大收益。
+\end{examplebox}
+
+\begin{solbox}{建模与手算}
+设
+\[
+x_j=\begin{cases}1,&\text{选择第 }j\text{ 个项目},\\0,&\text{不选择第 }j\text{ 个项目}.
+\end{cases}
+\]
+模型为
+\[
+\max Z=6x_1+5x_2+4x_3,
+\quad 4x_1+3x_2+2x_3\le 5,
+\quad x_j\in\{0,1\}.
+\]
+枚举可行组合：
+\[
+\begin{array}{c|c|c}
+\text{组合}&\text{资源}&\text{收益}\\
+\hline
+\{1\}&4&6\\
+\{2\}&3&5\\
+\{3\}&2&4\\
+\{1,3\}&6&\text{不可行}\\
+\{1,2\}&7&\text{不可行}\\
+\{2,3\}&5&9\\
+\{1,2,3\}&9&\text{不可行}
+\end{array}
+\]
+最优为选择项目 2 和项目 3。
+\end{solbox}
+\conclusion{0--1规划适合表达“是否选择”。背包问题是最典型的 0--1规划模型。}
+
+\section{蒙特卡洛法：用情景平均近似不确定收益}
+\begin{examplebox}{例题 4：报童订货的离散情景模拟}
+某商品售价 10 元，进价 6 元，剩余品可按 2 元处理。需求 $D$ 有三种情景：
+\[
+P(D=80)=0.2,
+\quad P(D=100)=0.5,
+\quad P(D=120)=0.3.
+\]
+只考虑订货量 $Q=80,100,120$ 三种方案，求期望利润最大者。
+\end{examplebox}
+
+\begin{solbox}{建模与手算}
+利润为
+\[
+\Pi(Q,D)=10\min(Q,D)+2\max(Q-D,0)-6Q.
+\]
+逐一计算：
+\[
+\begin{array}{c|ccc|c}
+Q&D=80&D=100&D=120&E(\Pi)\\
+\hline
+80&320&320&320&320\\
+100&240&400&400&0.2\times240+0.5\times400+0.3\times400=368\\
+120&160&320&480&0.2\times160+0.5\times320+0.3\times480=336
+\end{array}
+\]
+期望利润最大的是 $Q=100$。
+\end{solbox}
+\conclusion{蒙特卡洛法本质是“用大量随机样本或有限情景近似期望与风险”。纸上题通常把随机情景列成表，再算加权平均。}
+
+\section{无约束非线性规划：求驻点}
+\begin{examplebox}{例题 5：无约束极小值}
+求函数
+\[
+f(x,y)=(x-2)^2+(y+1)^2+3
+\]
+的最小值。
+\end{examplebox}
+
+\begin{solbox}{建模与手算}
+这是无约束非线性规划。由于平方项非负，直接看出
+\[
+(x-2)^2\ge 0,
+\qquad (y+1)^2\ge 0.
+\]
+当
+\[
+x=2,
+\qquad y=-1
+\]
+时两个平方项同时为 0，因此
+\[
+f_{\min}=3.
+\]
+也可用一阶条件：
+\[
+\frac{\partial f}{\partial x}=2(x-2)=0,
+\qquad
+\frac{\partial f}{\partial y}=2(y+1)=0.
+\]
+得到同样结果。
+\end{solbox}
+\conclusion{无约束极值题先求梯度为 0 的点，再用平方结构或 Hessian 判断极小、极大或鞍点。}
+
+\section{等式约束非线性规划：拉格朗日法}
+\begin{examplebox}{例题 6：固定总量下乘积最大}
+在约束
+\[
+x+y=10,
+\qquad x,y\ge 0
+\]
+下，求 $xy$ 的最大值。
+\end{examplebox}
+
+\begin{solbox}{建模与手算}
+构造拉格朗日函数
+\[
+L(x,y,\lambda)=xy-\lambda(x+y-10).
+\]
+一阶条件为
+\[
+\frac{\partial L}{\partial x}=y-\lambda=0,
+\qquad
+\frac{\partial L}{\partial y}=x-\lambda=0,
+\qquad x+y=10.
+\]
+由前两式得 $x=y$，再代入约束：
+\[
+2x=10\Rightarrow x=y=5.
+\]
+此时
+\[
+xy=25.
+\]
+\end{solbox}
+\conclusion{拉格朗日法适合处理等式约束极值。这个例子也说明：总和固定时，两数越接近，乘积越大。}
+
+\section{不等式约束非线性规划：KKT 条件}
+\begin{examplebox}{例题 7：点到可行区域的最近点}
+求
+\[
+\min f(x,y)=(x-3)^2+(y-2)^2
+\]
+满足
+\[
+x+y\le 4
+\]
+的最优解。
+\end{examplebox}
+
+\begin{solbox}{建模与手算}
+无约束最优点为 $(3,2)$，但 $3+2=5>4$，不可行。因此最优点落在边界 $x+y=4$ 上。
+构造
+\[
+L=(x-3)^2+(y-2)^2+\lambda(x+y-4),\qquad \lambda\ge0.
+\]
+KKT 一阶条件：
+\[
+2(x-3)+\lambda=0,
+\qquad 2(y-2)+\lambda=0,
+\qquad x+y=4.
+\]
+由前两式得
+\[
+x-3=y-2\Rightarrow x=y+1.
+\]
+代入 $x+y=4$：
+\[
+y+1+y=4\Rightarrow y=\frac32,
+\qquad x=\frac52.
+\]
+目标函数值为
+\[
+f=\left(\frac52-3\right)^2+\left(\frac32-2\right)^2=\frac12.
+\]
+\end{solbox}
+\conclusion{KKT 条件可以理解为“无约束最优点不满足约束时，把最优点投影到可行边界上”。互补松弛说明有效约束才会产生乘子。}
+
+\section{目标规划：加权系数法}
+\begin{examplebox}{例题 8：两个目标之间权衡}
+设决策变量 $x$ 表示某任务完成量，$0\le x\le10$。希望 $x\ge8$，但又希望 $x\le6$。未达到 8 的不足更重要，权重为 2；超过 6 的超出权重为 1。求加权目标规划解。
+\end{examplebox}
+
+\begin{solbox}{建模与手算}
+目标 1：$x$ 至少达到 8，不足量为
+\[
+d_1^- =\max(8-x,0).
+\]
+目标 2：$x$ 不超过 6，超出量为
+\[
+d_2^+ =\max(x-6,0).
+\]
+加权目标函数为
+\[
+\min Z=2d_1^-+d_2^+.
+\]
+分段讨论：
+\begin{itemize}
+\item 若 $x\le6$，则 $Z=2(8-x)$，随 $x$ 增大而减小，最好取 $x=6$，$Z=4$。
+\item 若 $6<x<8$，则 $Z=2(8-x)+(x-6)=10-x$，随 $x$ 增大而减小，最好趋向 $x=8$。
+\item 若 $x\ge8$，则 $Z=x-6$，随 $x$ 增大而增大，最好取 $x=8$，$Z=2$。
+\end{itemize}
+所以最优解为 $x=8$。
+\end{solbox}
+\conclusion{加权目标规划适合多个目标可以相互折中时使用。权重越大，表示该偏差越不希望出现。}
+
+\section{目标规划：优先等级法}
+\begin{examplebox}{例题 9：高优先级目标不可牺牲}
+仍设 $0\le x\le10$。目标 1 为 $x\ge8$，目标 2 为 $x\le6$。现在规定目标 1 的优先级绝对高于目标 2，即
+\[
+P_1\gg P_2.
+\]
+求优先等级目标规划解。
+\end{examplebox}
+
+\begin{solbox}{建模与手算}
+先只考虑最高优先级目标：让 $x\ge8$ 的不足量最小。
+显然可以取任意 $x\ge8$ 使不足量为 0。
+
+在所有满足最高优先级最优的解中，再考虑第二级目标 $x\le6$。若 $x\ge8$，超出量为 $x-6$，要使其最小，应取
+\[
+x=8.
+\]
+此时目标 1 完全满足，目标 2 超出 2。
+\end{solbox}
+\conclusion{优先等级法不是普通加权。它先保证高优先级目标，再在不破坏高优先级最优值的前提下优化低优先级目标。}
+
+\section{目标规划：Chebyshev 极小最大偏差}
+\begin{examplebox}{例题 10：均衡两个目标偏差}
+选择一个数 $x$，希望接近目标 8 和目标 12。两个目标允许尺度不同：第一个尺度为 2，第二个尺度为 4。求
+\[
+\min \max\left\{\frac{|x-8|}{2},\frac{|x-12|}{4}\right\}.
+\]
+\end{examplebox}
+
+\begin{solbox}{建模与手算}
+最优点通常在两个归一化偏差相等处。由于最优 $x$ 应在 8 与 12 之间，令
+\[
+\frac{x-8}{2}=\frac{12-x}{4}.
+\]
+解得
+\[
+4x-32=24-2x,
+\qquad 6x=56,
+\qquad x=\frac{28}{3}\approx9.33.
+\]
+此时最大归一化偏差为
+\[
+\frac{x-8}{2}=\frac{\frac{28}{3}-8}{2}=\frac{2}{3}.
+\]
+\end{solbox}
+\conclusion{Chebyshev 目标规划强调“不要让某个目标偏差特别大”，适合要求各目标比较均衡的场景。}
+
+\section{凸优化：局部最优就是全局最优}
+\begin{examplebox}{例题 11：一个简单凸优化}
+求
+\[
+\min f(x,y)=(x-1)^2+(y-2)^2
+\]
+满足等式约束
+\[
+x+y=5.
+\]
+\end{examplebox}
+
+\begin{solbox}{建模与手算}
+目标函数是两个平方和，是凸函数；约束 $x+y=5$ 是仿射约束，因此这是凸优化问题。
+构造拉格朗日函数
+\[
+L=(x-1)^2+(y-2)^2+\lambda(x+y-5).
+\]
+一阶条件：
+\[
+2(x-1)+\lambda=0,
+\qquad 2(y-2)+\lambda=0,
+\qquad x+y=5.
+\]
+由前两式得
+\[
+x-1=y-2\Rightarrow y=x+1.
+\]
+代入约束：
+\[
+x+x+1=5\Rightarrow x=2,
+\qquad y=3.
+\]
+目标值为
+\[
+f=(2-1)^2+(3-2)^2=2.
+\]
+\end{solbox}
+\conclusion{凸优化的好处是：只要满足凸性，KKT 或一阶条件得到的局部最优就是全局最优。许多最小二乘、岭回归、Lasso、投资组合模型都属于凸优化。}
+
+\section{二次规划 QP：平方型目标}
+\begin{examplebox}{例题 12：最小方差分配}
+把总比例 1 分配给两项资产，设比例为 $x,y$，要求
+\[
+x+y=1,
+\qquad x,y\ge0.
+\]
+风险函数为
+\[
+R=2x^2+y^2.
+\]
+求风险最小的分配。
+\end{examplebox}
+
+\begin{solbox}{建模与手算}
+这是二次规划。构造
+\[
+L=2x^2+y^2+\lambda(x+y-1).
+\]
+一阶条件：
+\[
+4x+\lambda=0,
+\qquad 2y+\lambda=0,
+\qquad x+y=1.
+\]
+由前两式得
+\[
+4x=2y\Rightarrow y=2x.
+\]
+代入约束：
+\[
+x+2x=1\Rightarrow x=\frac13,
+\qquad y=\frac23.
+\]
+风险为
+\[
+R=2\left(\frac13\right)^2+\left(\frac23\right)^2=\frac{2}{9}+\frac{4}{9}=\frac23.
+\]
+\end{solbox}
+\conclusion{二次规划常见于最小方差、轨迹平滑、支持向量机等。若二次项矩阵半正定，则属于凸二次规划，解比较可靠。}
+
+\section{动态规划 DP：从后往前算}
+\begin{examplebox}{例题 13：多阶段最短路径}
+从起点 A 到终点 F，有如下路径费用：
+\[
+A\to B:2,
+\quad A\to C:5;
+\]
+\[
+B\to D:4,
+\quad B\to E:6,
+\quad C\to D:1,
+\quad C\to E:2;
+\]
+\[
+D\to F:3,
+\quad E\to F:1.
+\]
+求 A 到 F 的最短路径。
+\end{examplebox}
+
+\begin{solbox}{建模与手算}
+用动态规划从后向前算。设 $V(s)$ 表示从节点 $s$ 到终点 F 的最短距离。
+终点前一层：
+\[
+V(D)=3,
+\qquad V(E)=1.
+\]
+中间层：
+\[
+V(B)=\min\{4+V(D),6+V(E)\}=\min\{7,7\}=7,
+\]
+\[
+V(C)=\min\{1+V(D),2+V(E)\}=\min\{4,3\}=3.
+\]
+起点：
+\[
+V(A)=\min\{2+V(B),5+V(C)\}=\min\{9,8\}=8.
+\]
+所以从 A 走到 C，再走到 E，再走到 F，费用为
+\[
+5+2+1=8.
+\]
+\end{solbox}
+\conclusion{动态规划的核心是状态、决策、状态转移和最优值函数。纸上题通常用“从后往前推”的表格法。}
+
+\section{网络流：最大流问题}
+\begin{examplebox}{例题 14：小网络最大流}
+网络容量如下：
+\[
+S\to A:3,
+\quad S\to B:2,
+\quad A\to B:1,
+\quad A\to T:2,
+\quad B\to T:3.
+\]
+求从源点 $S$ 到汇点 $T$ 的最大流。
+\end{examplebox}
+
+\begin{solbox}{建模与手算}
+先看上界。离开源点的总容量为
+\[
+3+2=5.
+\]
+进入汇点的总容量为
+\[
+2+3=5.
+\]
+所以最大流不可能超过 5。
+
+构造一个达到 5 的可行流：
+\[
+S\to A=3,
+\quad S\to B=2.
+\]
+其中 A 的 3 单位流量分为
+\[
+A\to T=2,
+\quad A\to B=1.
+\]
+此时 B 接收 $2+1=3$，再令
+\[
+B\to T=3.
+\]
+汇点 T 接收 $2+3=5$。
+\end{solbox}
+\conclusion{最大流题可用“找上界 + 构造达到上界的流”。若达到某个割的容量，则该流就是最大流。}
+
+\section{运输问题：供需平衡的线性规划}
+\begin{examplebox}{例题 15：两个仓库到两个市场}
+仓库 A、B 供应量分别为 20、30；市场 1、2 需求量分别为 25、25。单位运输费用为
+\[
+\begin{array}{c|cc}
+&\text{市场1}&\text{市场2}\\
+\hline
+\text{仓库A}&2&3\\
+\text{仓库B}&4&1
+\end{array}
+\]
+求最低运输成本。
+\end{examplebox}
+
+\begin{solbox}{建模与手算}
+直觉上，A 到市场 1 便宜，B 到市场 2 便宜。因此优先安排：
+\[
+A\to 1:20,
+\qquad B\to 2:25.
+\]
+此时市场 1 还差 5，仓库 B 还剩 5，于是
+\[
+B\to 1:5.
+\]
+运输方案为
+\[
+\begin{array}{c|cc|c}
+&1&2&\text{供应}\\
+\hline
+A&20&0&20\\
+B&5&25&30\\
+\hline
+\text{需求}&25&25&50
+\end{array}
+\]
+总成本为
+\[
+20\times2+0\times3+5\times4+25\times1=40+20+25=85.
+\]
+可用交换检验：若把一单位从 $A\to1,B\to2$ 改成 $A\to2,B\to1$，成本变化为
+\[
+(3+4)-(2+1)=4>0,
+\]
+因此当前安排不能通过这种交换降低成本。
+\end{solbox}
+\conclusion{运输问题是线性规划和网络流的重要特例。纸上小题可先按低成本路线分配，再做简单交换检验。}
+
+\section{随机规划：按情景优化期望}
+\begin{examplebox}{例题 16：需求不确定下的生产量}
+某产品售价 10 元，生产成本 6 元，未售出无残值。需求只有两种情景：
+\[
+D=80 \text{ 或 }120,
+\qquad P=0.5,0.5.
+\]
+只比较生产量 $Q=80$ 与 $Q=120$，问按期望利润应选哪个。
+\end{examplebox}
+
+\begin{solbox}{建模与手算}
+利润为
+\[
+\Pi(Q,D)=10\min(Q,D)-6Q.
+\]
+若 $Q=80$，两种情景都卖出 80：
+\[
+E\Pi=10\times80-6\times80=320.
+\]
+若 $Q=120$：
+\[
+D=80: \Pi=800-720=80,
+\]
+\[
+D=120: \Pi=1200-720=480.
+\]
+所以
+\[
+E\Pi=0.5\times80+0.5\times480=280.
+\]
+因此按期望利润选择 $Q=80$。
+\end{solbox}
+\conclusion{随机规划通常把不确定参数离散成情景，用情景概率加权计算期望目标。它比确定性规划更关注平均表现。}
+
+\section{鲁棒优化：按最坏情况决策}
+\begin{examplebox}{例题 17：同一生产问题的鲁棒版本}
+仍设售价 10 元、成本 6 元、无残值。但现在不设概率，只知道需求
+\[
+D\in[80,120].
+\]
+比较 $Q=80$ 与 $Q=120$，选择最坏情况下利润更高的方案。
+\end{examplebox}
+
+\begin{solbox}{建模与手算}
+若 $Q=80$，由于需求至少为 80，必定全部卖出：
+\[
+\Pi=10\times80-6\times80=320.
+\]
+若 $Q=120$，最坏情况是需求最低 $D=80$：
+\[
+\Pi=10\times80-6\times120=800-720=80.
+\]
+比较最坏情况利润：
+\[
+Q=80:320,
+\qquad Q=120:80.
+\]
+所以鲁棒方案选择 $Q=80$。
+\end{solbox}
+\conclusion{鲁棒优化不需要精确概率，而是要求方案在不确定集合内的最坏情况下也尽量好。它比随机规划更保守。}
+
+\section{启发式与元启发式：先求一个较好可行解}
+\begin{examplebox}{例题 18：最近邻法求旅行路径}
+四个城市构成正方形：
+\[
+A(0,0),\quad B(1,0),\quad C(1,1),\quad D(0,1).
+\]
+从 A 出发访问所有城市并回到 A。用最近邻启发式给出一条路线。
+\end{examplebox}
+
+\begin{solbox}{建模与手算}
+从 A 出发，距离最近的是 B 或 D。取 B：
+\[
+A\to B,\\quad d=1.
+\]
+从 B 出发，未访问城市中最近的是 C：
+\[
+B\to C,
+\quad d=1.
+\]
+从 C 出发，剩余城市 D：
+\[
+C\to D,
+\quad d=1.
+\]
+最后回到 A：
+\[
+D\to A,
+\quad d=1.
+\]
+总长度为
+\[
+1+1+1+1=4.
+\]
+这条路线为
+\[
+A\to B\to C\to D\to A.
+\]
+\end{solbox}
+\conclusion{启发式方法不一定保证全局最优，但能快速给出可行且较好的解。最近邻、2-opt、模拟退火、遗传算法、粒子群等都属于常见思路。}
+
+\section{机器学习与优化结合：预测后再优化}
+\begin{examplebox}{例题 19：预测需求后的产能分配}
+某模型预测明天 A、B 两类产品需求分别为 40 和 30。总产能只有 50。A 每件利润 3 元，B 每件利润 2 元。为避免生产超过预测需求，设产量为 $x_A,x_B$，求最大利润方案。
+\end{examplebox}
+
+\begin{solbox}{建模与手算}
+预测值先作为优化模型的参数。建立线性规划：
+\[
+\max Z=3x_A+2x_B,
+\]
+\[
+x_A+x_B\le 50,
+\quad 0\le x_A\le40,
+\quad 0\le x_B\le30.
+\]
+由于 A 单位利润更高，先满足 A 的预测需求：
+\[
+x_A=40.
+\]
+剩余产能为
+\[
+50-40=10,
+\]
+用于生产 B：
+\[
+x_B=10.
+\]
+利润为
+\[
+Z=3\times40+2\times10=140.
+\]
+\end{solbox}
+\conclusion{现代建模中常见“预测 + 优化”：机器学习先预测需求、价格、风险或时间，规划模型再根据预测结果做最优决策。注意预测误差会影响最终方案，后续可加入鲁棒优化或随机规划。}
+
+\section{黑箱优化/贝叶斯优化：少量试验找较优参数}
+\begin{examplebox}{例题 20：超参数试验的简单选择}
+某算法学习率 $\eta$ 有三个试验结果：
+\[
+\begin{array}{c|ccc}
+\eta&0.01&0.05&0.10\\
+\hline
+\text{验证误差}&0.20&0.12&0.14
+\end{array}
+\]
+若只能根据当前试验结果选择一个参数，并决定下一步搜索方向，应如何做？
+\end{examplebox}
+
+\begin{solbox}{建模与手算}
+目标是最小化验证误差。当前误差最小的是
+\[
+\eta=0.05,
+\qquad \text{误差}=0.12.
+\]
+因此当前最优选择为 $\eta=0.05$。
+
+由于 $0.05$ 附近比 $0.01$ 和 $0.10$ 都好，下一步可在其附近加密搜索，例如
+\[
+\eta\in\{0.03,0.04,0.05,0.06,0.07\}.
+\]
+更正式的贝叶斯优化会用代理模型估计“哪里可能更好”，再选择下一次试验点。
+\end{solbox}
+\conclusion{黑箱优化适合目标函数难写出解析式、每次试验代价高的情况。纸上理解时可把它看作“根据已有试验结果，逐步把搜索范围集中到更优区域”。}
+
+\newpage
+\section{最后总结：考试或建模时怎么快速选模型}
+\begin{center}
+\begin{longtable}{p{3.5cm}p{5.2cm}p{6.0cm}}
+\toprule
+题目关键词 & 优先模型 & 手算抓手\\
+\midrule
+最大利润、最小成本、资源限制 & 线性规划 & 画可行域、枚举顶点。\\
+数量必须是整数 & 整数规划 & 小范围枚举整数点。\\
+是否选择、是否建设 & 0--1规划 & 列组合，检查容量和收益。\\
+需求随机、风险、期望收益 & 蒙特卡洛/随机规划 & 列情景，算概率加权平均。\\
+目标或约束有平方、乘积、对数 & 非线性规划 & 求导、驻点、边界比较。\\
+等式约束极值 & 拉格朗日法 & 写 $L=f+\lambda h$，解方程组。\\
+不等式约束极值 & KKT 条件 & 判断约束是否有效，使用互补松弛。\\
+多个目标都有期望值 & 目标规划 & 引入正负偏差变量，最小化不希望出现的偏差。\\
+目标有绝对优先级 & 优先等级目标规划 & 先满足高优先级，再处理低优先级。\\
+希望各目标偏差均衡 & Chebyshev 目标规划 & 令主要归一化偏差相等。\\
+凸函数 + 凸约束 & 凸优化 & 一阶/KKT 条件给全局最优。\\
+平方型风险或方差 & 二次规划 & 写拉格朗日或配方。\\
+多阶段选择 & 动态规划 & 从最后一阶段倒推。\\
+节点、边、容量、路径 & 网络流/最短路/运输 & 找割、找路径、做供需平衡表。\\
+只知道不确定范围 & 鲁棒优化 & 比较最坏情况。\\
+规模太大，不好精确求 & 启发式/元启发式 & 最近邻、局部交换、随机搜索。\\
+先预测再决策 & 机器学习 + 优化 & 预测值进规划模型，再做敏感性或鲁棒修正。\\
+\bottomrule
+\end{longtable}
+\end{center}
+
+\begin{examplebox}{总的论文结论写法}
+本文针对不同规划问题分别构建了对应模型。若目标函数与约束均为线性形式，则可用线性规划；若变量存在不可分割或逻辑选择特征，则应使用整数规划或 0--1规划；若存在非线性收益、成本或物理关系，则应转化为非线性规划并通过导数、拉格朗日或 KKT 条件求解；若存在多个目标，则可采用加权目标规划、优先等级法或 Chebyshev 方法；若存在不确定性，则可使用蒙特卡洛、随机规划或鲁棒优化。对于大规模复杂问题，可结合网络优化、动态规划、启发式算法和机器学习预测模型提高求解效率与实际适应性。
+\end{examplebox}
+
+\section*{附：本讲义的使用方法}
+复习时不要先背算法名，而要先问：变量能不能连续？目标和约束是不是一次式？有没有整数或 0--1逻辑？有没有随机性？有没有多个目标？有没有多阶段结构？这样就能快速判断模型类型。
+
+\end{document}

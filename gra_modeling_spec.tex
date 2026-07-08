@@ -1,0 +1,450 @@
+\documentclass[UTF8,a4paper,11pt]{ctexart}
+\usepackage{geometry}
+\geometry{left=2.3cm,right=2.3cm,top=2.4cm,bottom=2.4cm}
+\usepackage{amsmath,amssymb,bm}
+\usepackage{booktabs,longtable,array,multirow}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{xurl}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{listings}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric,fit}
+\usepackage[most]{tcolorbox}
+\hypersetup{colorlinks=true,linkcolor=blue,urlcolor=blue,citecolor=blue}
+
+\setmainfont{Noto Serif}
+\setsansfont{Noto Sans}
+\setmonofont{DejaVu Sans Mono}
+\setCJKmainfont{Noto Serif CJK SC}
+\setCJKsansfont{Noto Sans CJK SC}
+\setCJKmonofont{Noto Sans Mono CJK SC}
+
+\definecolor{mainblue}{HTML}{1F4E79}
+\definecolor{lightblue}{HTML}{EAF2F8}
+\definecolor{lightgray}{HTML}{F5F5F5}
+\definecolor{codebg}{HTML}{F8F8F8}
+\definecolor{darkgreen}{HTML}{0B6E4F}
+
+\ctexset{
+  section={format=\Large\bfseries\color{mainblue}},
+  subsection={format=\large\bfseries\color{mainblue}},
+  subsubsection={format=\normalsize\bfseries\color{mainblue}}
+}
+
+\lstdefinestyle{pythonstyle}{
+  language=Python,
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{blue!70!black}\bfseries,
+  stringstyle=\color{darkgreen},
+  commentstyle=\color{gray!80!black},
+  numbers=left,
+  numberstyle=\tiny\color{gray},
+  frame=single,
+  rulecolor=\color{gray!40},
+  backgroundcolor=\color{codebg},
+  breaklines=true,
+  columns=fullflexible,
+  keepspaces=true,
+  showstringspaces=false,
+  tabsize=4
+}
+
+\newtcolorbox{notebox}[1][]{colback=lightblue,colframe=mainblue,title=#1,fonttitle=\bfseries,arc=2mm,boxrule=0.8pt}
+\newtcolorbox{warnbox}[1][]{colback=orange!8,colframe=orange!70!black,title=#1,fonttitle=\bfseries,arc=2mm,boxrule=0.8pt}
+
+\title{\heiti 灰色关联分析（GRA）建模规范\\[-2mm]
+\large 理论原理、建模步骤、结论评价、扩展方法与 Python 代码}
+\author{适用于数学建模论文与多指标综合评价}
+\date{\today}
+
+\begin{document}
+\sloppy
+\maketitle
+
+\begin{abstract}
+灰色关联分析（Grey Relational Analysis, GRA）是灰色系统理论中常用的关系度量与综合评价方法。它的核心思想是：先把评价对象和评价指标整理成数据矩阵，并通过正向化、标准化消除量纲和指标方向差异；再选取参考序列（理想序列、标杆对象或目标曲线），计算各比较序列与参考序列之间的差异、灰色关联系数和灰色关联度；最后依据关联度大小进行排序、分级和解释。本文按数学建模论文写法整理灰色关联分析的完整规范，重点说明它与热图、TOPSIS、熵权法和模糊综合评价的关系，并给出可直接改写进论文的模型段落、结论模板、扩展方法和 Python 代码。
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+\section{方法定位：灰色关联分析解决什么问题}
+\subsection{一句话概括}
+灰色关联分析的主旨是：\textbf{在信息不完全、样本量不大或评价对象较复杂时，用数据序列曲线形状的接近程度来判断对象之间的关联强弱，并据此排序或评价。}
+
+设有若干评价对象，每个对象有若干指标。若某个对象在各指标上的表现与参考序列越接近，则其灰色关联度越高，说明它越接近理想方案或标杆对象。
+
+\begin{notebox}[论文中可直接使用的表述]
+本文研究对象属于多指标综合评价问题。各评价对象在不同指标上的表现存在量纲差异和方向差异，且评价目标不是建立因果预测模型，而是比较各对象与理想参考序列之间的接近程度。因此，本文采用灰色关联分析法。该方法通过构造参考序列、计算比较序列与参考序列之间的差异序列和灰色关联系数，进而得到综合关联度，能够在样本规模较小或信息不完全的条件下实现多指标排序评价。
+\end{notebox}
+
+\subsection{和热图的关系}
+热图是可视化工具，灰色关联分析是计算模型。热图可以展示原始数据矩阵、标准化矩阵或灰色关联系数矩阵，但不能替代灰色关联分析的计算过程。
+
+\begin{center}
+\begin{tikzpicture}[node distance=1.0cm,>=Stealth]
+\tikzstyle{box}=[rectangle,draw=mainblue,rounded corners,align=center,minimum width=3.2cm,minimum height=0.8cm,fill=lightblue]
+\node[box] (data) {原始数据矩阵\\$X=(x_{ij})$};
+\node[box,right=1.4cm of data] (std) {正向化与标准化\\$R=(r_{ij})$};
+\node[box,right=1.4cm of std] (coef) {灰色关联系数\\$\xi_i(k)$};
+\node[box,right=1.4cm of coef] (grade) {关联度与排序\\$\gamma_i$};
+\draw[->,thick] (data) -- (std);
+\draw[->,thick] (std) -- (coef);
+\draw[->,thick] (coef) -- (grade);
+\node[below=0.55cm of std,align=center,text width=11cm] {热图可以画 $X$、$R$ 或 $\xi_i(k)$，但只有完成后两步，才叫灰色关联分析。};
+\end{tikzpicture}
+\end{center}
+
+如果题目只是要求展示“哪个对象在哪些指标上高或低”，可以直接画热图；如果题目要求判断“哪个方案最接近理想方案、哪个因素关联更强、哪个对象排名更靠前”，则应使用灰色关联分析，并把热图作为辅助图形。
+
+\subsection{适用场景}
+灰色关联分析常用于以下问题：
+\begin{enumerate}[label=\arabic*)]
+  \item 多指标综合评价：方案优选、城市发展水平评价、生态质量评价、企业绩效评价等；
+  \item 小样本或信息不完全问题：样本量不大，但指标数据可得；
+  \item 多目标实验优化：例如工艺参数优化、Taguchi-GRA；
+  \item 序列相似性比较：如不同地区、不同企业、不同时间段的变化趋势接近程度；
+  \item 与 AHP、熵权法、CRITIC、TOPSIS、FCE 等方法结合，形成组合评价模型。
+\end{enumerate}
+
+\section{理论原理：为什么可以使用灰色关联分析}
+\subsection{灰色系统与灰色关联}
+灰色系统理论把信息完全未知的系统看作“黑”，信息完全已知的系统看作“白”，介于二者之间、信息部分已知部分未知的系统称为“灰”。现实评价问题通常很少拥有完全信息，因此可用灰色系统思想处理不确定性和不完全信息。
+
+灰色关联分析关注的不是严格因果关系，而是\textbf{序列之间曲线形状、变化趋势和数值接近程度}。若两条序列在各指标或各时间点上的变化形状越相似，则其关联越强；反之，关联越弱。
+
+\subsection{和回归、最小二乘、TOPSIS 的区别}
+\begin{longtable}{p{3cm}p{4cm}p{6cm}}
+\toprule
+方法 & 核心问题 & 主要输出 \\
+\midrule
+灰色关联分析 & 谁和参考序列更接近 & 灰色关联系数、关联度、排序 \\
+最小二乘法 & 怎样让拟合误差平方和最小 & 参数估计、拟合曲线或预测值 \\
+多元回归 & 多个自变量如何解释因变量 & 回归系数、显著性、预测模型 \\
+TOPSIS & 谁更接近正理想解、远离负理想解 & 贴近度、排序 \\
+模糊综合评价 & 对象属于各评语等级的程度 & 隶属度向量、等级、得分 \\
+\bottomrule
+\end{longtable}
+
+可以把灰色关联分析理解为一种“参考型评价方法”：它和 TOPSIS 都会设定参考目标，但 TOPSIS 主要基于欧氏距离，灰色关联分析则把每个指标上的局部差异转化为关联系数，再加权合成关联度。
+
+\subsection{使用该方法的基本假设}
+\begin{enumerate}[label=H\arabic*：]
+  \item \textbf{可比性假设。}各评价对象属于同一类对象，同一指标体系对所有对象均适用。
+  \item \textbf{同向性假设。}经过正向化处理后，各指标均满足“值越大越好”或“越接近参考序列越好”。
+  \item \textbf{标准化合理性假设。}不同量纲、不同数量级的指标通过标准化可放在同一尺度下比较。
+  \item \textbf{参考序列有效性假设。}所选参考序列能够代表理想状态、标杆对象或研究目标。
+  \item \textbf{加权合成假设。}各指标的局部关联系数可通过平均或加权平均合成为综合关联度。
+\end{enumerate}
+
+\section{一级灰色关联分析模型}
+\subsection{评价对象、指标集与原始矩阵}
+设有 $m$ 个评价对象：
+\[
+A=\{A_1,A_2,\ldots,A_m\},
+\]
+有 $n$ 个评价指标：
+\[
+C=\{C_1,C_2,\ldots,C_n\}.
+\]
+原始数据矩阵为
+\[
+X=(x_{ij})_{m\times n}=\begin{bmatrix}
+x_{11}&x_{12}&\cdots&x_{1n}\\
+x_{21}&x_{22}&\cdots&x_{2n}\\
+\vdots&\vdots&\ddots&\vdots\\
+x_{m1}&x_{m2}&\cdots&x_{mn}
+\end{bmatrix},
+\]
+其中 $x_{ij}$ 表示第 $i$ 个评价对象在第 $j$ 个指标上的原始值。
+
+\subsection{参考序列的选择}
+参考序列通常有三种选法：
+\begin{enumerate}[label=\arabic*)]
+  \item \textbf{理想最优序列。}各指标正向化后取最大值：
+  \[
+  X_0=(x_0(1),\ldots,x_0(n)),\quad x_0(j)=\max_i r_{ij}.
+  \]
+  常用于方案优选和综合评价。
+  \item \textbf{实际标杆序列。}选某个代表性对象作为参考，例如行业龙头、标准城市、目标企业。
+  \item \textbf{目标值序列。}由标准、规划目标、专家给定目标构成参考序列。
+\end{enumerate}
+
+\begin{warnbox}[参考序列不要随意选]
+若参考序列代表“理想状态”，则最终关联度可以解释为“接近理想状态的程度”；若参考序列代表“某个对象”，则最终关联度只能解释为“与该对象的相似程度”，不能直接解释为优劣。
+\end{warnbox}
+
+\section{建模步骤规范：可直接写进论文}
+\subsection{Step1：明确评价类问题}
+先说明评价对象、评价目标、评价范围和数据来源。若只有一个参考对象和若干比较对象，结论是“关联强弱”；若有多个方案，结论是“排序优选”。
+
+\subsection{Step2：构建指标体系并判断指标属性}
+常见指标类型如下。
+\begin{table}[h]
+\centering
+\caption{指标类型与正向化思路}
+\begin{tabular}{p{2.6cm}p{4.8cm}p{5.8cm}}
+\toprule
+指标类型 & 含义 & 示例 \\
+\midrule
+最大型 & 越大越好 & 收益率、合格率、绿化率、满意度 \\
+最小型 & 越小越好 & 成本、污染浓度、延误时间、故障率 \\
+中间型 & 越接近目标值越好 & 适宜温度、合理负荷率、适中湿度 \\
+区间型 & 落在合理区间最好 & 合理人口密度、库存周转区间、负债率区间 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Step3：正向化处理}
+正向化的目标是把所有指标统一转化为“值越大越好”。
+
+\subsubsection{最大型指标}
+\[
+x'_{ij}=x_{ij}.
+\]
+
+\subsubsection{最小型指标}
+可取
+\[
+x'_{ij}=\max_i x_{ij}-x_{ij}.
+\]
+若所有值为正，也可取倒数型 $x'_{ij}=1/x_{ij}$，但论文中应说明选择理由。
+
+\subsubsection{中间型指标}
+设目标值为 $a_j$，越接近 $a_j$ 越好：
+\[
+x'_{ij}=1-\frac{|x_{ij}-a_j|}{\max_i |x_{ij}-a_j|}.
+\]
+
+\subsubsection{区间型指标}
+设最佳区间为 $[a_j,b_j]$，定义偏离距离
+\[
+d_{ij}=\begin{cases}
+0, & a_j\le x_{ij}\le b_j,\\
+a_j-x_{ij}, & x_{ij}<a_j,\\
+x_{ij}-b_j, & x_{ij}>b_j,
+\end{cases}
+\]
+再取
+\[
+x'_{ij}=1-\frac{d_{ij}}{\max_i d_{ij}}.
+\]
+
+\subsection{Step4：标准化处理}
+正向化后得到 $X'=(x'_{ij})$，再进行无量纲化。常用极差标准化：
+\[
+r_{ij}=\frac{x'_{ij}-\min_i x'_{ij}}{\max_i x'_{ij}-\min_i x'_{ij}}.
+\]
+标准化后的矩阵记为
+\[
+R=(r_{ij})_{m\times n}.
+\]
+若某一列所有值相等，则该指标在当前样本中不能区分对象，应剔除、合并或在论文中说明。
+
+\begin{notebox}[标准化、归一化和距离打分的区别]
+标准化主要是消除量纲和数量级影响，使指标可比较；归一化常指把一组数缩放为和为 1 的比例，例如 $p_{ij}=r_{ij}/\sum_i r_{ij}$；距离打分强调某点在线段或空间中相对最大值、最小值、理想点的位置。三者经常都能把数值压到 $[0,1]$，但目的不同，不能混写。
+\end{notebox}
+
+\subsection{Step5：确定参考序列}
+若采用理想最优参考序列，则
+\[
+X_0=(x_0(1),x_0(2),\ldots,x_0(n)),\quad x_0(j)=\max_i r_{ij}.
+\]
+在极差标准化后，若每列均有最优对象，通常 $X_0=(1,1,\ldots,1)$。
+
+\subsection{Step6：计算差异序列}
+第 $i$ 个对象与参考序列在第 $j$ 个指标上的绝对差异为
+\[
+\Delta_i(j)=|x_0(j)-r_{ij}|.
+\]
+令
+\[
+\Delta_{\min}=\min_i\min_j \Delta_i(j),\quad
+\Delta_{\max}=\max_i\max_j \Delta_i(j).
+\]
+
+\subsection{Step7：计算灰色关联系数}
+灰色关联系数为
+\[
+\xi_i(j)=\frac{\Delta_{\min}+\rho\Delta_{\max}}{\Delta_i(j)+\rho\Delta_{\max}},\quad 0<\rho\le 1.
+\]
+其中 $\rho$ 称为分辨系数或识别系数，常取 $0.5$。因为 $\Delta_{\min}\le \Delta_i(j)\le \Delta_{\max}$，所以
+\[
+0<\xi_i(j)\le 1.
+\]
+差异越小，$\xi_i(j)$ 越接近 1；差异越大，$\xi_i(j)$ 越小。
+
+\begin{warnbox}[关于 $\rho=0.5$]
+$\rho$ 不是必须等于 $0.5$，而是常用折中取值。$\rho$ 越小，差异被放大，排序区分度增强；$\rho$ 越大，差异被压平，结果更平滑。严谨论文可补充 $\rho=0.3,0.5,0.7$ 的敏感性分析。
+\end{warnbox}
+
+\subsection{Step8：确定权重}
+若各指标重要性相同，可取等权：
+\[
+w_j=\frac{1}{n}.
+\]
+若需要体现主观经验，可用 AHP；若希望更客观，可用熵权法、CRITIC、变异系数法；也可组合赋权：
+\[
+w_j=\alpha w_j^{(s)}+(1-\alpha)w_j^{(o)},\quad 0\le \alpha\le 1,
+\]
+其中 $w_j^{(s)}$ 为主观权重，$w_j^{(o)}$ 为客观权重。
+
+\subsection{Step9：计算灰色关联度并排序}
+第 $i$ 个对象的灰色关联度为
+\[
+\gamma_i=\sum_{j=1}^n w_j\xi_i(j),\quad \sum_{j=1}^n w_j=1.
+\]
+若等权，则
+\[
+\gamma_i=\frac{1}{n}\sum_{j=1}^n \xi_i(j).
+\]
+$\gamma_i$ 越大，说明第 $i$ 个对象越接近参考序列。根据 $\gamma_i$ 从大到小排序即可得到方案优劣。
+
+\section{多级灰色关联分析模型}
+当指标体系有一级指标、二级指标时，可以采用多级灰色关联分析。
+
+设一级指标为
+\[
+B=\{B_1,B_2,\ldots,B_s\},
+\]
+第 $q$ 个一级指标下有二级指标
+\[
+C_q=\{C_{q1},C_{q2},\ldots,C_{qn_q}\}.
+\]
+建模步骤为：
+\begin{enumerate}[label=\arabic*)]
+  \item 在每个一级指标内部计算二级指标的关联系数 $\xi_{iqk}$；
+  \item 用二级指标权重 $v_{qk}$ 得到一级指标内部关联度：
+  \[
+  \gamma_{iq}=\sum_{k=1}^{n_q}v_{qk}\xi_{iqk};
+  \]
+  \item 用一级指标权重 $u_q$ 进行总合成：
+  \[
+  \Gamma_i=\sum_{q=1}^s u_q\gamma_{iq}.
+  \]
+\end{enumerate}
+
+\begin{center}
+\begin{tikzpicture}[node distance=1.0cm,>=Stealth]
+\tikzstyle{box}=[rectangle,draw=mainblue,rounded corners,align=center,fill=lightblue,minimum height=0.75cm]
+\node[box,minimum width=3.5cm] (goal) {目标层：综合关联度};
+\node[box,below left=1.2cm and 2.2cm of goal] (b1) {一级指标 $B_1$};
+\node[box,below=1.2cm of goal] (b2) {一级指标 $B_2$};
+\node[box,below right=1.2cm and 2.2cm of goal] (bs) {一级指标 $B_s$};
+\node[box,below=0.9cm of b1,minimum width=3.2cm] (c1) {$C_{11},C_{12},\ldots$};
+\node[box,below=0.9cm of b2,minimum width=3.2cm] (c2) {$C_{21},C_{22},\ldots$};
+\node[box,below=0.9cm of bs,minimum width=3.2cm] (cs) {$C_{s1},C_{s2},\ldots$};
+\draw[->] (goal) -- (b1);\draw[->] (goal) -- (b2);\draw[->] (goal) -- (bs);
+\draw[->] (b1) -- (c1);\draw[->] (b2) -- (c2);\draw[->] (bs) -- (cs);
+\end{tikzpicture}
+\end{center}
+
+\section{结果解释与结论评价模板}
+\subsection{单对象或多对象排序结论}
+\begin{notebox}[综合排序结论模板]
+由灰色关联分析结果可知，各评价对象的综合关联度依次为 $\gamma_1,\gamma_2,\ldots,\gamma_m$。其中 $A_k$ 的灰色关联度最高，说明其在各指标上的综合表现最接近参考序列，可判定为最优方案；$A_l$ 的关联度最低，说明其与参考序列差距较大，是后续改进重点。结合各指标的灰色关联系数热图可知，影响 $A_l$ 排名较低的主要短板为 \ldots，因此建议从 \ldots 方面进行优化。
+\end{notebox}
+
+\subsection{等级评价模板}
+可根据关联度划分等级，例如：
+\begin{table}[h]
+\centering
+\caption{灰色关联度等级划分示例}
+\begin{tabular}{ccccc}
+\toprule
+关联度区间 & $[0.80,1]$ & $[0.70,0.80)$ & $[0.60,0.70)$ & $[0,0.60)$ \\
+\midrule
+等级 & 强关联/优秀 & 较强关联/良好 & 一般关联/中等 & 弱关联/较差 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+等级阈值不是固定标准，应结合研究领域、历史样本或专家经验确定。
+
+\subsection{图表展示建议}
+灰色关联分析论文建议至少给出以下图表：
+\begin{enumerate}[label=\arabic*)]
+  \item 指标体系表：说明指标含义、属性和数据来源；
+  \item 原始数据表：保证数据透明；
+  \item 标准化矩阵表：展示正向化与无量纲化结果；
+  \item 灰色关联系数表或热图：显示各对象在各指标上的接近程度；
+  \item 综合关联度与排序表：给出最终评价结果；
+  \item 关联度柱状图或雷达图：直观比较对象优劣；
+  \item $\rho$ 敏感性分析表：检验结论稳定性。
+\end{enumerate}
+
+\section{可拓展方法与新的组合思路}
+\subsection{熵权-灰色关联分析}
+用熵权法确定指标权重，再用灰色关联分析排序。适合指标数据较完整、希望降低主观赋权影响的场景。基本路线为：
+\[
+X\rightarrow \text{正向化}\rightarrow R\rightarrow \text{熵权 }w_j\rightarrow \xi_i(j)\rightarrow \gamma_i.
+\]
+
+\subsection{AHP-灰色关联分析}
+用 AHP 表达专家经验，得到主观权重；再用 GRA 进行对象排序。适合评价指标专业性强、专家判断重要的场景。应补充判断矩阵和一致性检验。
+
+\subsection{CRITIC-GRA}
+CRITIC 权重同时考虑指标标准差和指标间冲突性，适合指标间相关性较强的评价问题。若两个指标高度相关，它们提供的信息可能重复，CRITIC 能在一定程度上削弱冗余影响。
+
+\subsection{GRA-TOPSIS}
+TOPSIS 使用正负理想解的距离，GRA 使用关联系数。二者可以结合：先用 GRA 得到关联度，或把 TOPSIS 的距离思想与 GRA 的关联系数结合，用于稳健排序。此类方法适合复杂多属性决策。
+
+\subsection{模糊灰色关联分析}
+当指标值或权重本身带有模糊性，例如专家给出“较高”“中等”“偏低”等语言变量，可将模糊数与 GRA 结合，形成模糊灰色关联分析。
+
+\subsection{Taguchi-GRA 多目标实验优化}
+在工程实验中，多个响应指标常常不能同时达到最优。Taguchi-GRA 可先把多个响应指标归一化，再通过灰色关联度转化为单一目标，用于寻找最优实验参数组合。
+
+\subsection{灰色关联热图与聚类}
+把灰色关联系数矩阵画成热图，再结合层次聚类、K-means 或 DBSCAN，可以发现对象群组结构。例如在城市评价中，可把不同城市按关联模式分为高质量型、均衡型、短板型等。
+
+\section{常见错误与检查清单}
+\begin{longtable}{p{3.5cm}p{5cm}p{5cm}}
+\toprule
+常见错误 & 问题表现 & 修改建议 \\
+\midrule
+未正向化 & 最小型指标被误当作越大越好 & 先判定指标属性，再统一正向化 \\
+标准化公式混乱 & 不同指标尺度不可比 & 明确采用极差标准化、向量标准化或其他方法 \\
+参考序列含义不清 & 关联度解释不准确 & 写明参考序列是理想值、标杆对象还是目标值 \\
+把关联度当因果关系 & 误写成“某指标导致某结果” & 改为“接近程度”“关联强弱”或“相似程度” \\
+忽略 $\rho$ 敏感性 & 排序可能依赖参数 & 补充不同 $\rho$ 下排序稳定性检验 \\
+权重来源不清 & 结果缺乏可解释性 & 写明等权、AHP、熵权、CRITIC 或组合权重 \\
+只画热图不计算 & 缺少模型结果 & 热图只能辅助展示，仍需给出关联系数和关联度 \\
+\bottomrule
+\end{longtable}
+
+\section{Python 代码模板}
+以下代码覆盖正向化、标准化、熵权、灰色关联系数、灰色关联度和排序。可直接保存为 \texttt{gra\_model.py} 使用。
+
+\lstinputlisting[style=pythonstyle]{/mnt/data/gra_model.py}
+
+\section{论文写作模板}
+\subsection{模型建立段落}
+本文采用灰色关联分析法对评价对象进行综合评价。首先，构建由 $m$ 个评价对象和 $n$ 个评价指标组成的原始数据矩阵 $X=(x_{ij})_{m\times n}$。由于各指标存在量纲差异和方向差异，对最大型、最小型、中间型和区间型指标分别进行正向化处理，并采用极差标准化得到无量纲矩阵 $R=(r_{ij})$。其次，以各指标的最优值构造参考序列 $X_0$，计算比较序列与参考序列之间的差异 $\Delta_i(j)$，进一步得到灰色关联系数 $\xi_i(j)$。最后，结合指标权重 $w_j$ 计算综合灰色关联度 $\gamma_i=\sum_jw_j\xi_i(j)$，并根据 $\gamma_i$ 的大小对评价对象进行排序和等级划分。
+
+\subsection{结果分析段落}
+由计算结果可知，$A_k$ 的综合灰色关联度最高，说明其整体表现最接近参考序列，是所有评价对象中的最优方案；$A_l$ 的关联度最低，说明其综合表现与理想序列差距较大。进一步观察灰色关联系数矩阵可知，$A_l$ 在指标 $C_p$ 和 $C_q$ 上的关联系数较低，是影响其综合排名的主要原因。因此，后续改进应重点提升 $C_p$ 和 $C_q$ 对应方面的表现。
+
+\subsection{模型评价段落}
+灰色关联分析的优点是计算过程清晰、对样本量要求相对较低、适合处理多指标综合评价和信息不完全问题；同时，它能将各指标上的局部接近程度转化为综合关联度，便于排序和解释。其局限性在于参考序列、标准化方法、分辨系数和权重选择会影响结果。因此，本文进一步通过参数敏感性分析和多种赋权方法对比检验结果稳健性。
+
+\section{总结}
+灰色关联分析可以概括为“以参考序列为中心的相似性评价方法”。它的完整建模套路是：
+\[
+\text{评价对象与指标矩阵}\rightarrow \text{正向化}\rightarrow \text{标准化}\rightarrow \text{参考序列}\rightarrow \text{差异序列}\rightarrow \text{关联系数}\rightarrow \text{关联度}\rightarrow \text{排序评价}.
+\]
+如果题目只是展示矩阵数据，可以使用热图；如果题目要求评价对象与理想对象的接近程度、影响因素强弱或方案排序，则应采用灰色关联分析，并用热图展示关联系数矩阵。
+
+\section*{参考资料与网页论文实例}
+\begin{enumerate}[label={[\arabic*]}]
+  \item Deng Julong. \textit{Introduction to Grey System Theory}. The Journal of Grey System, 1989. \url{https://uranos.ch/research/references/Julong_1989/10.1.1.678.3477.pdf}
+  \item Liu S. \textit{Grey Relational Analysis Models}. Springer, 2024. \url{https://link.springer.com/chapter/10.1007/978-981-97-8727-2_5}
+  \item \textit{Grey Relational Analysis}. Journal of Advanced Engineering Research teaching material. \url{https://jaeronline.com/wp-content/uploads/2020/04/5.-Grey-Relational-Analysis.pdf}
+  \item Mahmoudi A., Javed S. A., Liu S., Deng X. Distinguishing coefficient driven sensitivity analysis of GRA model for intelligent decisions. \textit{Technological and Economic Development of Economy}, 2020. \url{https://journals.vilniustech.lt/index.php/TEDE/article/view/11890}
+  \item Silva N. F. et al. An integrated CRITIC and Grey Relational Analysis approach for investment portfolio selection. \textit{Decision Analytics Journal}, 2023. \url{https://www.sciencedirect.com/science/article/pii/S277266222300125X}
+  \item Rehman A. U. et al. Evaluating Industry 4.0 Manufacturing Configurations: An Entropy-Based Grey Relational Analysis Approach. \textit{Processes}, 2023. \url{https://www.mdpi.com/2227-9717/11/11/3151}
+\end{enumerate}
+
+\end{document}
