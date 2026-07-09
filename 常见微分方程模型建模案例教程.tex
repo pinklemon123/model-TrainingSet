@@ -1,0 +1,863 @@
+\documentclass[11pt,a4paper]{ctexart}
+\usepackage{geometry}
+\geometry{left=2.25cm,right=2.25cm,top=2.4cm,bottom=2.4cm}
+\usepackage{amsmath,amssymb,bm}
+\usepackage{booktabs,longtable,array,multirow}
+\usepackage{graphicx,float}
+\usepackage{caption,subcaption}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{xurl}
+\usepackage{hyperref}
+\Urlmuskip=0mu plus 2mu
+\usepackage{listings}
+\usepackage{tcolorbox}
+\usepackage{fancyhdr}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric,shapes.misc}
+\hypersetup{colorlinks=true,linkcolor=blue!55!black,urlcolor=blue!55!black,citecolor=blue!55!black}
+\setCJKmainfont{Noto Serif CJK SC}
+\setCJKsansfont{Noto Sans CJK SC}
+\setmainfont{Noto Serif CJK SC}
+\setsansfont{Noto Sans CJK SC}
+\linespread{1.16}
+\sloppy
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.28em}
+\setlength{\headheight}{14pt}
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{常见微分方程模型建模案例教程}
+\rhead{人口、种群、天气与评价预测}
+\cfoot{\thepage}
+
+\definecolor{mainblue}{RGB}{31,78,121}
+\definecolor{lightblue}{RGB}{235,243,255}
+\definecolor{lightgreen}{RGB}{240,250,242}
+\definecolor{lightorange}{RGB}{255,247,235}
+\definecolor{codebg}{RGB}{248,248,248}
+
+\lstdefinestyle{pythonstyle}{
+    language=Python,
+    basicstyle=\ttfamily\small,
+    keywordstyle=\color{blue!65!black}\bfseries,
+    commentstyle=\color{green!40!black},
+    stringstyle=\color{orange!70!black},
+    backgroundcolor=\color{codebg},
+    frame=single,
+    rulecolor=\color{black!20},
+    breaklines=true,
+    columns=fullflexible,
+    keepspaces=true,
+    showstringspaces=false
+}
+
+\newtcolorbox{modelbox}[1]{colback=lightblue,colframe=mainblue,title=\textbf{#1},fonttitle=\sffamily,arc=2mm,boxrule=0.8pt}
+\newtcolorbox{notebox}[1]{colback=lightorange,colframe=orange!60!black,title=\textbf{#1},fonttitle=\sffamily,arc=2mm,boxrule=0.8pt}
+\newtcolorbox{casebox}[1]{colback=lightgreen,colframe=green!45!black,title=\textbf{#1},fonttitle=\sffamily,arc=2mm,boxrule=0.8pt}
+
+\title{\Huge\bfseries 常见微分方程模型建模案例教程\\[0.3em]
+\Large 人口预测、阻滞增长、种群关系、天气预测与模型评价}
+\author{建模复习讲义}
+\date{\today}
+
+\begin{document}
+\maketitle
+\thispagestyle{empty}
+
+\begin{abstract}
+本讲义面向数学建模、常微分方程建模和课程复习，系统整理常见微分方程模型的建立思路、可行性论证、公式推导、参数含义、Python 求解、图像解释和预测评价。重点包括：人口预测模型、阻滞增长模型及其推广、Lotka--Volterra 食饵--捕食者模型及优化、竞争互利等其他种群关系模型、传染病模型、天气预测模型与 Lorenz 简化模型。最后给出通用评价指标、误差分析和建模论文写作模板。
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+\section{微分方程建模的基本思想}
+
+\subsection{为什么建模时经常使用微分方程}
+现实问题中很多量不是一次性跳变，而是随时间连续变化。例如人口数量、鱼群数量、捕食者数量、感染者数量、温度、污染物浓度等。微分方程建模的核心是：
+\[
+\text{某状态量的变化率}=\text{流入或增加项}-\text{流出或减少项}.
+\]
+这和传染病模型中的“感染者变化率等于潜伏者转化量减去康复量和死亡量”是同一类思路。只要能把“增加”和“减少”的机制写清楚，就可以建立微分方程模型。
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth]{figures/ode_modeling_pipeline.png}
+\caption{微分方程建模的一般流程：问题分析、假设、建方程、估参数、求解和评价。}
+\end{figure}
+
+\subsection{建模时最常用的表达模板}
+设研究对象为 $x(t)$。如果它本身增长，常写成 $+rx$；如果受资源限制，常写成 $-bx^2$ 或 $x(1-x/K)$；如果两个变量相互作用，常写成乘积项 $xy$；如果有外部输入，常写成 $+u(t)$；如果有自然衰减，常写成 $-kx$。因此，许多模型可以看成如下组合：
+\[
+\frac{dx}{dt}=\underbrace{\text{自身增长}}_{rx}
++\underbrace{\text{外部输入}}_{u(t)}
+-\underbrace{\text{自然衰减}}_{kx}
+-\underbrace{\text{资源阻滞}}_{bx^2}
++\underbrace{\text{相互作用}}_{cxy}.
+\]
+
+\begin{modelbox}{建模时的解释原则}
+每个公式项都要配一句中文解释。例如：
+\[
+\frac{dP}{dt}=rP\left(1-\frac{P}{K}\right)
+\]
+应解释为：人口 $P$ 的变化率等于自然增长 $rP$，再乘以资源限制因子 $1-P/K$。当 $P$ 较小时，资源限制弱，增长近似指数增长；当 $P$ 接近环境容量 $K$ 时，增长趋于零。
+\end{modelbox}
+
+\subsection{常见符号说明}
+\begin{longtable}{>{\centering\arraybackslash}p{2.3cm}p{10.5cm}}
+\toprule
+符号 & 含义 \\
+\midrule
+$t$ & 时间，可以按年、月、日、小时计。\\
+$x(t),P(t)$ & 某一数量随时间的变化，如人口、种群、病例、温度等。\\
+$r$ & 内禀增长率，即单位时间相对增长速度。\\
+$K$ & 环境容量或上限，表示资源能长期支持的最大规模。\\
+$\alpha,\beta,\gamma,\delta$ & 种群相互作用模型中的增长率、捕食率、死亡率、转化率等。\\
+$u(t)$ & 外部控制量或干预量，如捕捞、移民、投药、调控政策。\\
+$\theta$ & 推广阻滞模型中的非线性调节参数。\\
+\bottomrule
+\end{longtable}
+
+\subsection{模型可行性怎么写}
+微分方程模型不是越复杂越好。数学建模中通常需要写清楚以下四点：
+\begin{enumerate}[itemsep=0.2em]
+\item \textbf{机制可解释：} 方程中的每一项都来自具体过程，例如出生、死亡、捕食、迁移、恢复、冷却、扩散。
+\item \textbf{参数可估计：} 参数可以由经验、文献或数据拟合得到。
+\item \textbf{数据可验证：} 模型输出可以和实际观测量比较，例如人口、病例、温度、降水概率。
+\item \textbf{复杂度适当：} 若数据少，使用简单模型；若数据多且目标精细，再加入年龄结构、空间扩散、时变参数或随机项。
+\end{enumerate}
+
+\section{人口预测模型}
+
+人口预测是微分方程建模最常见的入门案例。人口数量受出生、死亡、迁移、资源限制、政策和经济因素影响。建模时通常从简单的指数增长模型开始，再引入资源上限得到阻滞增长模型。联合国人口预测中常用的是按年龄和性别分组的 cohort-component 思想，即按照生育、死亡和迁移三个成分推进人口结构；在课程建模中可先掌握连续型近似模型。联合国《World Population Prospects 2024 Methodology》将 base population 和 cohort-component projection 作为人口预测的重要框架。
+
+\subsection{Malthus 指数增长模型}
+\subsubsection{建模假设}
+\begin{enumerate}[itemsep=0.2em]
+\item 人口总量记为 $P(t)$。
+\item 单位时间出生率和死亡率近似稳定。
+\item 净增长率 $r$ 为常数，且人口增长与当前人口成正比。
+\end{enumerate}
+
+\subsubsection{模型建立}
+若出生增加量为 $bP$，死亡减少量为 $dP$，则
+\[
+\frac{dP}{dt}=bP-dP=(b-d)P=rP.
+\]
+初值为 $P(0)=P_0$ 时，解为
+\[
+P(t)=P_0 e^{rt}.
+\]
+
+\begin{notebox}{模型解释}
+指数模型适合短期、资源尚未成为限制因素的情形。若 $r>0$，人口持续增长；若 $r<0$，人口指数衰减；若 $r=0$，人口保持不变。它的缺点是长期预测会无限增长，不符合资源有限的现实。
+\end{notebox}
+
+\subsection{带迁移的人口预测模型}
+若每年有净迁入 $m(t)$，则
+\[
+\frac{dP}{dt}=rP+m(t).
+\]
+若 $m(t)=m$ 为常数，则
+\[
+P(t)=\left(P_0+\frac{m}{r}\right)e^{rt}-\frac{m}{r},\quad r\ne 0.
+\]
+这个模型常用于“自然增长 + 外来迁移”的城市人口预测。若迁移量与人口规模有关，也可以写成
+\[
+\frac{dP}{dt}=rP+\eta P=(r+\eta)P.
+\]
+其中 $\eta$ 为迁入迁出造成的相对变化率。
+
+\subsection{年龄结构人口模型简介}
+更真实的人口预测需要考虑不同年龄段的生育率、死亡率和迁移率。设 $P_a(t)$ 表示年龄组 $a$ 的人口，可以用差分或连续年龄结构模型表示：
+\[
+P_{a+1}(t+1)=s_a P_a(t)+M_a(t),
+\]
+其中 $s_a$ 为从年龄组 $a$ 存活到下一年龄组的比例，$M_a(t)$ 为迁移量。新生儿年龄组满足
+\[
+P_0(t+1)=\sum_a f_a P_a(t),
+\]
+其中 $f_a$ 为对应年龄组的生育率。这个模型本质上仍然是“状态随时间推进”的动力系统，只是比单一总人口模型更细。
+
+\begin{casebox}{建模论文中的写法}
+若题目只给总人口数据，则建议先使用指数模型或 Logistic 模型；若题目给年龄、性别、生育、死亡、迁移数据，则优先考虑 cohort-component 或 Leslie 矩阵模型。建模时说明：简单模型解释性强，但忽略年龄结构；年龄结构模型更真实，但需要更多数据。
+\end{casebox}
+
+\section{阻滞增长模型及其推广}
+
+\subsection{Logistic 阻滞增长模型}
+OpenStax/LibreTexts 的微分方程教材将 Logistic 方程写为
+\[
+\frac{dP}{dt}=rP\left(1-\frac{P}{K}\right),
+\]
+其中 $K$ 表示 carrying capacity，即环境容量或承载能力，$r$ 表示增长率。
+
+\subsubsection{公式推导}
+指数模型为 $dP/dt=rP$。当人口变大时，资源竞争增强，增长率应下降。令实际增长率从 $r$ 变为
+\[
+r\left(1-\frac{P}{K}\right),
+\]
+便得到 Logistic 模型：
+\[
+\frac{dP}{dt}=rP\left(1-\frac{P}{K}\right).
+\]
+
+\subsubsection{解析解}
+若 $P(0)=P_0$，则
+\[
+P(t)=\frac{K}{1+\left(\frac{K-P_0}{P_0}\right)e^{-rt}}.
+\]
+当 $t\to \infty$ 时，$P(t)\to K$。因此 $K$ 是长期稳定规模。
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.86\textwidth]{figures/population_growth_curves.png}
+\caption{指数增长、Logistic、Gompertz 和 Richards 模型曲线比较。指数模型长期无限增长，而阻滞类模型趋向上限。}
+\end{figure}
+
+\subsection{平衡点与稳定性}
+Logistic 方程的平衡点由
+\[
+rP\left(1-\frac{P}{K}\right)=0
+\]
+得到，即 $P=0$ 和 $P=K$。当 $0<P<K$ 时，$dP/dt>0$；当 $P>K$ 时，$dP/dt<0$。因此 $P=K$ 稳定，$P=0$ 在正向人口意义下不稳定。
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.82\textwidth]{figures/logistic_phase_line.png}
+\caption{Logistic 模型的相线解释：低于环境容量时增长，高于环境容量时回落。}
+\end{figure}
+
+\subsection{Gompertz 增长模型}
+Gompertz 模型常用于肿瘤增长、产品扩散、人口或技术扩散，其形式为
+\[
+\frac{dP}{dt}=rP\ln\frac{K}{P}.
+\]
+其中 $\ln(K/P)$ 是阻滞因子。当 $P$ 很小但不为零时增长较快；当 $P$ 接近 $K$ 时增长变慢。解析解为
+\[
+P(t)=K\exp\left[-a e^{-rt}\right],
+\]
+其中 $a=\ln(K/P_0)$。
+
+\subsection{Richards 推广模型}
+Richards 模型进一步加入形状参数 $\nu$：
+\[
+\frac{dP}{dt}=rP\left[1-\left(\frac{P}{K}\right)^\nu\right].
+\]
+当 $\nu=1$ 时退化为 Logistic 模型。$\nu$ 控制曲线拐点位置，适合数据呈现非标准 S 形增长时使用。
+
+\subsection{$\theta$-Logistic 模型}
+生态学中还常用
+\[
+\frac{dP}{dt}=rP\left[1-\left(\frac{P}{K}\right)^\theta\right].
+\]
+它和 Richards 形式相近。$\theta>1$ 时，接近环境容量后阻滞作用更强；$0<\theta<1$ 时，低密度阶段阻滞就较明显。
+
+\subsection{带收获或控制的阻滞模型}
+若人口、鱼群或资源被持续开采，设收获强度为 $H$，则
+\[
+\frac{dP}{dt}=rP\left(1-\frac{P}{K}\right)-H.
+\]
+若收获与数量成比例，设捕捞努力为 $E$，捕获系数为 $q$，则
+\[
+\frac{dP}{dt}=rP\left(1-\frac{P}{K}\right)-qEP.
+\]
+这类模型可用于渔业管理、森林采伐、可再生资源利用。若 $H$ 过大，可能导致资源灭绝；若适当控制，可使种群维持在较高水平。
+
+\subsection{时变环境容量模型}
+环境容量可能随季节、政策、气候、资源供给改变，可以写为
+\[
+\frac{dP}{dt}=rP\left(1-\frac{P}{K(t)}\right).
+\]
+例如
+\[
+K(t)=K_0\left(1+a\sin\frac{2\pi t}{T}\right),
+\]
+表示季节性资源波动。这个模型比常数 $K$ 更真实，但也更难估计参数。
+
+\subsection{阻滞增长模型的建模步骤}
+\begin{enumerate}[itemsep=0.25em]
+\item 画出数据散点，判断是否呈 S 形增长。
+\item 估计初始值 $P_0$、长期上限 $K$ 和增长率 $r$。
+\item 用最小二乘拟合参数，使观测值 $P_i$ 与模型预测 $\hat P(t_i)$ 的误差最小。
+\item 计算 RMSE、MAE、$R^2$，并画残差图。
+\item 用未来时间点 $t$ 代入模型预测，并说明预测区间和风险。
+\end{enumerate}
+
+\begin{lstlisting}[style=pythonstyle,caption={Logistic 模型数值拟合的基本代码框架}]
+import numpy as np
+from scipy.optimize import curve_fit
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+
+def logistic(t, r, K, P0):
+    return K / (1 + (K - P0) / P0 * np.exp(-r * t))
+
+t = np.array([0, 1, 2, 3, 4, 5, 6])
+y = np.array([10, 15, 24, 38, 55, 72, 85])
+params, cov = curve_fit(logistic, t, y, p0=[0.5, 100, 10])
+y_pred = logistic(t, *params)
+mae = mean_absolute_error(y, y_pred)
+rmse = mean_squared_error(y, y_pred) ** 0.5
+r2 = r2_score(y, y_pred)
+print(params, mae, rmse, r2)
+\end{lstlisting}
+
+\section{Lotka--Volterra 食饵--捕食者模型}
+
+\subsection{模型背景}
+食饵--捕食者模型描述两个物种的相互关系：食饵数量多时，捕食者获得食物而增加；捕食者数量多时，食饵被捕食而减少。Scholarpedia 对 predator-prey model 的介绍指出，Lotka--Volterra 是最简单的捕食者--食饵相互作用模型，其基本形式基于线性的人均增长率。
+
+\subsection{符号说明}
+\begin{longtable}{>{\centering\arraybackslash}p{2.2cm}p{10.8cm}}
+\toprule
+符号 & 含义 \\
+\midrule
+$x(t)$ & 食饵数量，例如兔子、鱼、害虫。\\
+$y(t)$ & 捕食者数量，例如狐狸、大鱼、天敌昆虫。\\
+$\alpha$ & 食饵在没有捕食者时的自然增长率。\\
+$\beta$ & 捕食率，表示捕食者与食饵相遇后导致食饵减少的强度。\\
+$\gamma$ & 捕食者在没有食饵时的自然死亡率。\\
+$\delta$ & 食饵转化为捕食者增长的效率。\\
+\bottomrule
+\end{longtable}
+
+\subsection{经典模型公式}
+\[
+\begin{cases}
+\dfrac{dx}{dt}=\alpha x-\beta xy,\\[0.4em]
+\dfrac{dy}{dt}=-\gamma y+\delta xy.
+\end{cases}
+\]
+第一式表示：食饵变化率等于自身繁殖 $\alpha x$ 减去被捕食量 $\beta xy$。第二式表示：捕食者变化率等于捕食食饵带来的增长 $\delta xy$ 减去自然死亡 $\gamma y$。
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.86\textwidth]{figures/lv_timeseries.png}
+\caption{Lotka--Volterra 模型的周期振荡：食饵先增加，随后捕食者增加，接着食饵下降，捕食者也随之下降。}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.70\textwidth]{figures/lv_phase.png}
+\caption{食饵--捕食者模型的相轨线。共存平衡点为 $(\gamma/\delta,\alpha/\beta)$。}
+\end{figure}
+
+\subsection{平衡点分析}
+令 $dx/dt=0,dy/dt=0$，得到平衡点：
+\[
+(0,0),\qquad \left(\frac{\gamma}{\delta},\frac{\alpha}{\beta}\right).
+\]
+共存平衡点表示食饵和捕食者可以长期共同存在。经典模型中解常表现为围绕共存平衡点的周期振荡。
+
+\subsection{经典模型的局限性}
+经典 Lotka--Volterra 模型虽然清晰，但假设较强：
+\begin{enumerate}[itemsep=0.2em]
+\item 食饵在没有捕食者时指数增长，没有资源上限。
+\item 捕食率与 $xy$ 成正比，假设捕食者胃口无限。
+\item 不考虑年龄结构、空间分布、季节变化和随机扰动。
+\item 参数不随时间变化。
+\end{enumerate}
+因此，在建模竞赛中，经典模型常作为基础模型，之后需要进行修正。
+
+\section{食饵--捕食者模型的优化与改进}
+
+\subsection{加入食饵环境容量}
+为了避免食饵无限增长，可改为
+\[
+\begin{cases}
+\dfrac{dx}{dt}=rx\left(1-\dfrac{x}{K}\right)-\beta xy,\\[0.5em]
+\dfrac{dy}{dt}=-\gamma y+\delta xy.
+\end{cases}
+\]
+其中 $rx(1-x/K)$ 表示食饵自身受资源限制的增长。这个模型比经典模型更适合长期预测。
+
+\subsection{Holling II 型捕食函数}
+真实捕食者需要搜索、捕获和消化食物，捕食速度不会随食饵数量无限上升。因此可将 $\beta xy$ 改为
+\[
+\frac{a x}{1+h x}y,
+\]
+其中 $a$ 是最大攻击强度，$h$ 是处理时间相关参数。改进模型为
+\[
+\begin{cases}
+\dfrac{dx}{dt}=rx\left(1-\dfrac{x}{K}\right)-\dfrac{a x}{1+h x}y,\\[0.6em]
+\dfrac{dy}{dt}=-\gamma y+e\dfrac{a x}{1+h x}y.
+\end{cases}
+\]
+这体现了“食饵越多，捕食越容易，但捕食者处理能力有限”。
+
+\subsection{加入人工捕捞或灭虫控制}
+若对食饵或捕食者进行人工控制，可写为
+\[
+\begin{cases}
+\dfrac{dx}{dt}=rx\left(1-\dfrac{x}{K}\right)-\beta xy-H_x(t),\\[0.5em]
+\dfrac{dy}{dt}=-\gamma y+\delta xy-H_y(t).
+\end{cases}
+\]
+其中 $H_x(t)$、$H_y(t)$ 为控制函数。例如害虫治理中，$H_x(t)$ 表示杀虫剂或生物防治强度；渔业中，$H_x(t)$ 表示捕捞量。
+
+\subsection{优化目标函数}
+若希望既保持经济收益，又避免种群崩溃，可以建立最优控制问题：
+\[
+\max_{H(t)} J=\int_0^T \left[pH(t)-cH(t)^2\right]dt,
+\]
+约束为
+\[
+\frac{dx}{dt}=rx\left(1-\frac{x}{K}\right)-qH(t)x.
+\]
+其中 $pH(t)$ 表示收益，$cH(t)^2$ 表示过度投入成本。建模时不一定要求完整求解 Pontryagin 最大值原理，竞赛中可以采用数值搜索：枚举不同控制强度，比较收益、风险和种群最终数量。
+
+\begin{casebox}{优化版模型写作套路}
+先建立基础动力学模型，再加入控制变量，最后定义目标函数。若模型较难解析求解，可以说明采用数值模拟、遗传算法、粒子群、网格搜索或动态规划寻找近似最优策略。
+\end{casebox}
+
+\begin{lstlisting}[style=pythonstyle,caption={用 solve\_ivp 求解食饵--捕食者模型}]
+import numpy as np
+from scipy.integrate import solve_ivp
+import matplotlib.pyplot as plt
+
+def lv(t, z, alpha, beta, gamma, delta):
+    x, y = z
+    dx = alpha * x - beta * x * y
+    dy = -gamma * y + delta * x * y
+    return [dx, dy]
+
+params = (1.1, 0.04, 0.4, 0.01)
+sol = solve_ivp(lambda t, z: lv(t, z, *params),
+                [0, 80], [30, 10], t_eval=np.linspace(0, 80, 400))
+plt.plot(sol.t, sol.y[0], label="prey")
+plt.plot(sol.t, sol.y[1], label="predator")
+plt.legend(); plt.show()
+\end{lstlisting}
+
+\section{其他种群关系模型}
+
+\subsection{两物种竞争模型}
+两个物种争夺同一种资源时，可建立竞争模型：
+\[
+\begin{cases}
+\dfrac{dx}{dt}=r_1x\left(1-\dfrac{x+a_{12}y}{K_1}\right),\\[0.6em]
+\dfrac{dy}{dt}=r_2y\left(1-\dfrac{y+a_{21}x}{K_2}\right).
+\end{cases}
+\]
+其中 $a_{12}$ 表示物种 $y$ 对物种 $x$ 的竞争强度，$a_{21}$ 表示物种 $x$ 对物种 $y$ 的竞争强度。
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.86\textwidth]{figures/competition_timeseries.png}
+\caption{竞争模型示意：两个物种争夺资源，最终可能共存，也可能一方被排挤。}
+\end{figure}
+
+\subsection{互利共生模型}
+若两个物种互相促进，但仍受环境容量限制，可写为
+\[
+\begin{cases}
+\dfrac{dx}{dt}=r_1x\left(1-\dfrac{x-a_{12}y}{K_1}\right),\\[0.6em]
+\dfrac{dy}{dt}=r_2y\left(1-\dfrac{y-a_{21}x}{K_2}\right).
+\end{cases}
+\]
+这里 $-a_{12}y$ 和 $-a_{21}x$ 表示对方的存在降低了自身的资源压力。为避免无限增长，必须保留环境容量或饱和机制。
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.86\textwidth]{figures/mutualism_timeseries.png}
+\caption{互利模型示意：两个物种互相促进，但仍受到上限约束。}
+\end{figure}
+
+\subsection{寄生模型}
+寄生关系可看成捕食模型的一种温和形式。设 $x$ 为宿主，$y$ 为寄生者，可写为
+\[
+\begin{cases}
+\dfrac{dx}{dt}=r x\left(1-\dfrac{x}{K}\right)-a xy,\\[0.5em]
+\dfrac{dy}{dt}=-d y+bxy.
+\end{cases}
+\]
+与捕食模型不同的是，寄生者一般不立即杀死宿主，参数 $a$ 可能较小，并且还可加入宿主免疫或恢复项。
+
+\subsection{Allee 效应模型}
+有些种群在数量过少时反而难以增长，例如难以找到配偶、群体防御能力弱。可用 Allee 效应表示：
+\[
+\frac{dP}{dt}=rP\left(1-\frac{P}{K}\right)\left(\frac{P}{A}-1\right).
+\]
+其中 $A$ 为 Allee 阈值。当 $P<A$ 时，$dP/dt<0$，种群可能走向灭绝；当 $P>A$ 时，才有增长可能。
+
+\subsection{传染病 SIR/SEIR 模型}
+传染病模型也是种群关系模型的一类。SIR 模型为
+\[
+\begin{cases}
+\dfrac{dS}{dt}=-\beta SI/N,\\[0.4em]
+\dfrac{dI}{dt}=\beta SI/N-\gamma I,\\[0.4em]
+\dfrac{dR}{dt}=\gamma I.
+\end{cases}
+\]
+解释为：易感者因接触感染者转为感染者；感染者按恢复率转入移除者。若存在潜伏期，则加入 $E$ 仓室得到 SEIR 模型：
+\[
+\begin{cases}
+\dfrac{dS}{dt}=-\beta SI/N,\\
+\dfrac{dE}{dt}=\beta SI/N-\sigma E,\\
+\dfrac{dI}{dt}=\sigma E-\gamma I,\\
+\dfrac{dR}{dt}=\gamma I.
+\end{cases}
+\]
+
+\section{天气预测模型}
+
+\subsection{天气预测为什么也是微分方程问题}
+天气变化由大气运动、热力学、湿度、辐射和地形等共同决定。NOAA NCEI 对 Numerical Weather Prediction 的说明指出，NWP 计算机模型将当前天气观测资料同化进模型框架，用于预测未来的温度、降水等气象要素。换句话说，天气预测的核心也是：给出当前状态，再用动力学方程推进到未来。
+
+\subsection{数值天气预报的一般框架}
+数值天气预报通常包括两个步骤：
+\begin{enumerate}[itemsep=0.2em]
+\item \textbf{资料同化：} 将卫星、雷达、地面站、探空等观测融合，得到尽可能准确的初始大气状态。
+\item \textbf{动力积分：} 用物理方程对温度、风、气压、湿度等变量向前积分，得到未来预报。
+\end{enumerate}
+
+简化地看，大气模式由以下几类方程组成：
+\[
+\begin{cases}
+\text{动量方程：} & \dfrac{D\bm v}{Dt}+f\bm k\times \bm v=-\dfrac{1}{\rho}\nabla p+\bm F,\\[0.5em]
+\text{连续方程：} & \dfrac{D\rho}{Dt}+\rho\nabla\cdot \bm v=0,\\[0.5em]
+\text{热力方程：} & \dfrac{DT}{Dt}=Q,\\[0.5em]
+\text{水汽方程：} & \dfrac{Dq}{Dt}=S_q,\\[0.5em]
+\text{状态方程：} & p=\rho R T.
+\end{cases}
+\]
+这些是偏微分方程系统，实际业务模式会离散到网格上，用超级计算机求解。Pu 与 Kalnay 的 NWP 基础资料中也说明，NWP 的基本概念是求解一组偏微分方程，这组方程通常称为 primitive equations。
+
+\subsection{简化天气模型一：能量平衡 ODE}
+为了课程建模，可以先用一维能量平衡模型表示温度变化：
+\[
+C\frac{dT}{dt}=S(1-\alpha)-\left(A+BT\right)+F(t).
+\]
+其中 $C$ 是热容量，$S(1-\alpha)$ 是吸收的太阳辐射，$A+BT$ 是向外长波辐射，$F(t)$ 是外部强迫。整理得
+\[
+\frac{dT}{dt}=\frac{S(1-\alpha)-A-BT+F(t)}{C}.
+\]
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.85\textwidth]{figures/energy_balance.png}
+\caption{简化能量平衡 ODE 的数值模拟。它不等于真实天气预报，但适合教学中解释“热量收支决定温度变化”。}
+\end{figure}
+
+\subsection{简化天气模型二：Lorenz 混沌模型}
+Lorenz 系统来自大气对流的低维简化模型：
+\[
+\begin{cases}
+\dot{x}=\sigma(y-x),\\
+\dot{y}=x(\rho-z)-y,\\
+\dot{z}=xy-\beta z.
+\end{cases}
+\]
+它常用于说明天气预测中的敏感依赖：初值有很小误差，长期预测也可能迅速发散。这就是“蝴蝶效应”的数学示例。
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.72\textwidth]{figures/lorenz_attractor.png}
+\caption{Lorenz 系统轨迹：展示天气系统的非线性和初值敏感性。}
+\end{figure}
+
+\subsection{天气预测模型的评价}
+天气模型不能只看一张曲线是否好看，必须用观测数据验证。常用指标包括：
+\[
+\text{Bias}=\frac{1}{n}\sum_{i=1}^n(\hat y_i-y_i),
+\]
+\[
+\text{RMSE}=\sqrt{\frac{1}{n}\sum_{i=1}^n(\hat y_i-y_i)^2}.
+\]
+若预测的是“明天下雨概率”，可用 Brier Score：
+\[
+\text{BS}=\frac{1}{n}\sum_{i=1}^n(p_i-o_i)^2,
+\]
+其中 $p_i$ 为预测概率，$o_i\in\{0,1\}$ 表示是否真的发生。JMA 的 NWP 验证指标资料给出的 Brier Score 定义正是概率预报误差平方的平均值，并指出值越小预报越准确。
+
+\section{其他常见微分方程模型补充}
+
+\subsection{Newton 冷却模型}
+若物体温度为 $T(t)$，环境温度为 $T_e$，则
+\[
+\frac{dT}{dt}=-k(T-T_e).
+\]
+解释为：物体降温速度与它和环境的温差成正比。解为
+\[
+T(t)=T_e+(T_0-T_e)e^{-kt}.
+\]
+该模型适合食品冷却、尸温估计、材料热交换等简单场景。
+
+\subsection{药物代谢模型}
+若血药浓度 $C(t)$ 按比例代谢，且有给药输入 $u(t)$，则
+\[
+\frac{dC}{dt}=-kC+u(t).
+\]
+若是一次给药后无输入，$u(t)=0$，则
+\[
+C(t)=C_0e^{-kt}.
+\]
+若连续输液 $u(t)=u_0$，则
+\[
+C(t)=\frac{u_0}{k}+\left(C_0-\frac{u_0}{k}\right)e^{-kt}.
+\]
+
+\subsection{污染物自净模型}
+河流中污染物浓度 $C(t)$ 可简化为
+\[
+\frac{dC}{dt}=Q_{in}-kC,
+\]
+其中 $Q_{in}$ 是污染输入，$kC$ 表示自然降解、稀释和沉降。若 $Q_{in}$ 为常数，长期浓度趋向 $Q_{in}/k$。
+
+\subsection{谣言传播模型}
+谣言传播与传染病类似。设 $S$ 为未听说者，$I$ 为传播者，$R$ 为不再传播者：
+\[
+\begin{cases}
+\dfrac{dS}{dt}=-\beta SI,\\
+\dfrac{dI}{dt}=\beta SI-\gamma I,\\
+\dfrac{dR}{dt}=\gamma I.
+\end{cases}
+\]
+如果加入官方辟谣或平台限流，可把 $\gamma$ 设为随时间变化，或加入控制项 $u(t)$。
+
+\subsection{经济增长的 Solow 简化模型}
+设 $K(t)$ 为资本存量，$Y=AK^\alpha L^{1-\alpha}$ 为产出，则资本变化可写为
+\[
+\frac{dK}{dt}=sY-\delta K.
+\]
+其中 $s$ 是储蓄率，$\delta$ 是折旧率。这个模型体现“投资增加资本，折旧减少资本”。
+
+\section{参数估计、预测与评价指标}
+
+\subsection{参数估计的目标函数}
+设观测数据为 $(t_i,y_i)$，模型预测为 $\hat y_i(\theta)$。最常用的参数估计方法是最小二乘：
+\[
+\min_\theta \sum_{i=1}^n \left[y_i-\hat y_i(\theta)\right]^2.
+\]
+若误差近似服从正态分布，最小二乘有较好的统计解释。若异常值较多，可以改用 MAE 或 Huber 损失。
+
+\subsection{常用评价指标}
+scikit-learn 官方文档提供了 regression metrics，例如 mean squared error、mean absolute error、$R^2$ 等指标。建模报告中常写：
+\[
+\text{MAE}=\frac{1}{n}\sum_{i=1}^n |y_i-\hat y_i|,
+\]
+\[
+\text{MSE}=\frac{1}{n}\sum_{i=1}^n (y_i-\hat y_i)^2,
+\]
+\[
+\text{RMSE}=\sqrt{\text{MSE}},
+\]
+\[
+\text{MAPE}=\frac{100\%}{n}\sum_{i=1}^n\left|\frac{y_i-\hat y_i}{y_i}\right|,
+\]
+\[
+R^2=1-\frac{\sum_{i=1}^n(y_i-\hat y_i)^2}{\sum_{i=1}^n(y_i-\bar y)^2}.
+\]
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.86\textwidth]{figures/fit_forecast.png}
+\caption{观测数据与模型预测曲线比较。建模报告中应同时给出图像和数值误差。}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.86\textwidth]{figures/residual_plot.png}
+\caption{残差图用于检查系统性误差。若残差呈趋势或周期结构，说明模型遗漏了重要因素。}
+\end{figure}
+
+\subsection{评价指标的选择建议}
+\begin{longtable}{p{3cm}p{5.2cm}p{5.1cm}}
+\toprule
+指标 & 适用场景 & 注意事项 \\
+\midrule
+MAE & 误差绝对量直观，抗异常值能力比 MSE 强 & 不强调大误差。\\
+RMSE & 常用于连续预测，尤其是温度、人口、病例等 & 对大误差敏感。\\
+MAPE & 适合相对误差解释 & 当真实值接近 0 时不稳定。\\
+$R^2$ & 衡量拟合优度 & 不能单独代表预测能力，可能过拟合。\\
+Bias & 天气预报、长期预测的系统偏差 & 正负误差可能抵消。\\
+Brier Score & 概率预测，如下雨概率、灾害发生概率 & 越小越好，适合二分类事件概率。\\
+Skill Score & 与基准模型比较 & 需要定义合理基准，如持久性预报或历史均值。\\
+\bottomrule
+\end{longtable}
+
+\subsection{训练误差和预测误差}
+建模时不能只用全部数据拟合后报告误差。更规范的做法是把数据分为训练集和测试集。对于时间序列，通常使用前 $70\%$ 或 $80\%$ 的时间点拟合参数，用后面时间点检验预测能力。
+\[
+\text{训练误差小但测试误差大}\quad\Longrightarrow\quad\text{可能过拟合。}
+\]
+
+\subsection{残差分析}
+残差定义为
+\[
+e_i=y_i-\hat y_i.
+\]
+残差图应围绕 0 随机波动。如果残差呈现以下现象，需要修正模型：
+\begin{enumerate}[itemsep=0.2em]
+\item 残差长期为正或为负：模型存在系统偏差。
+\item 残差呈周期波动：模型遗漏季节性或周期项。
+\item 残差越来越大：方差不稳定，可能要变换变量或加权拟合。
+\item 个别残差极大：可能存在异常值或突发事件。
+\end{enumerate}
+
+\begin{lstlisting}[style=pythonstyle,caption={评价指标计算代码}]
+import numpy as np
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+
+y_true = np.array([10, 15, 24, 38, 55])
+y_pred = np.array([11, 14, 25, 36, 58])
+mae = mean_absolute_error(y_true, y_pred)
+rmse = mean_squared_error(y_true, y_pred) ** 0.5
+r2 = r2_score(y_true, y_pred)
+mape = np.mean(np.abs((y_true - y_pred) / y_true)) * 100
+print(mae, rmse, r2, mape)
+\end{lstlisting}
+
+\section{模型选择与建模模板}
+
+\subsection{常见模型适用场景总表}
+\begin{longtable}{p{3.2cm}p{4.2cm}p{4.2cm}p{2.8cm}}
+\toprule
+模型 & 适用问题 & 核心公式 & 主要评价 \\
+\midrule
+指数增长 & 短期人口、早期传播、细菌增长 & $dP/dt=rP$ & RMSE、增长率合理性 \\
+Logistic & 有上限的人口、市场扩散、资源增长 & $dP/dt=rP(1-P/K)$ & $K$ 是否合理、残差 \\
+Gompertz & 非对称 S 形增长、肿瘤、技术扩散 & $dP/dt=rP\ln(K/P)$ & 拐点拟合、长期上限 \\
+Richards & 拐点位置可调的 S 形增长 & $dP/dt=rP[1-(P/K)^\nu]$ & 参数显著性、过拟合 \\
+Lotka--Volterra & 食饵--捕食者周期关系 & $x'=\alpha x-\beta xy$ & 周期、相图、稳定性 \\
+竞争模型 & 两种群争夺资源 & $x'=r_1x(1-(x+a_{12}y)/K_1)$ & 共存或排挤判断 \\
+互利模型 & 共生、合作、正反馈 & 正相互作用 + 上限约束 & 是否出现不合理爆炸 \\
+SIR/SEIR & 传染病、谣言传播 & 仓室流转方程 & 峰值、最终规模、$R_0$ \\
+能量平衡模型 & 简化温度变化 & $C T'=S(1-\alpha)-A-BT+F$ & 温度误差、趋势 \\
+Lorenz 模型 & 混沌、初值敏感教学 & 三变量非线性 ODE & 轨迹形态、敏感性 \\
+\bottomrule
+\end{longtable}
+
+\subsection{建模论文的标准结构}
+\begin{enumerate}[itemsep=0.25em]
+\item \textbf{问题重述：} 用自己的话说明预测对象和目标。
+\item \textbf{问题分析：} 判断是增长、衰减、传播、相互作用还是控制优化。
+\item \textbf{模型假设：} 写出忽略的因素和保留的主要机制。
+\item \textbf{符号说明：} 列表说明变量、参数和单位。
+\item \textbf{模型建立：} 从“变化率=增加-减少”推导方程。
+\item \textbf{参数估计：} 说明用文献、经验或最小二乘估计参数。
+\item \textbf{模型求解：} 解析解、数值解或仿真。
+\item \textbf{结果分析：} 画曲线、相图、峰值、长期趋势。
+\item \textbf{模型评价：} 使用误差指标、残差图和灵敏度分析。
+\item \textbf{改进方向：} 加入时变参数、空间扩散、随机扰动、控制变量。
+\end{enumerate}
+
+\subsection{示范段落：如何解释一个方程}
+以 Logistic 收获模型为例：
+\[
+\frac{dP}{dt}=rP\left(1-\frac{P}{K}\right)-qEP.
+\]
+可以写成：种群数量 $P(t)$ 的变化由两部分构成。第一部分 $rP(1-P/K)$ 表示种群在有限资源下的自然增长，其中 $rP$ 是低密度时的近似指数增长，$1-P/K$ 是环境阻滞因子；第二部分 $qEP$ 表示人工捕捞造成的减少，捕捞量与捕捞努力 $E$ 和当前种群数量 $P$ 成正比。该模型能够同时描述自然增长与人为控制，因此适合用于可再生资源管理的初步预测。
+
+\section{完整示范案例：鱼塘鱼群增长与捕捞决策}
+
+\subsection{问题描述}
+某鱼塘鱼群数量 $P(t)$ 受自然繁殖、环境容量和捕捞影响。现在需要预测未来一年鱼群数量，并给出捕捞强度建议。
+
+\subsection{假设条件}
+\begin{enumerate}[itemsep=0.2em]
+\item 鱼塘环境在一年内基本稳定，环境容量为 $K$。
+\item 鱼群自然增长服从 Logistic 模型。
+\item 捕捞量与鱼群数量和捕捞努力成正比。
+\item 不考虑鱼的年龄结构和外来鱼群迁入。
+\end{enumerate}
+
+\subsection{符号说明}
+\begin{longtable}{>{\centering\arraybackslash}p{2.2cm}p{10.8cm}}
+\toprule
+符号 & 含义 \\
+\midrule
+$P(t)$ & 第 $t$ 月鱼群数量。\\
+$r$ & 鱼群月增长率。\\
+$K$ & 鱼塘环境容量。\\
+$E$ & 捕捞努力强度。\\
+$q$ & 捕获系数。\\
+\bottomrule
+\end{longtable}
+
+\subsection{模型建立}
+无捕捞时鱼群满足
+\[
+\frac{dP}{dt}=rP\left(1-\frac{P}{K}\right).
+\]
+加入捕捞项后：
+\[
+\frac{dP}{dt}=rP\left(1-\frac{P}{K}\right)-qEP.
+\]
+当 $E=0$ 时，鱼群最终趋向 $K$；当 $E$ 增大时，有效增长率下降。若 $qE\ge r$，低密度阶段也无法增长，可能导致资源衰退。
+
+\subsection{决策指标}
+可以定义收益函数
+\[
+J(E)=p\int_0^T qEP(t)dt-cE^2T,
+\]
+其中 $p$ 是单位捕捞收益，$cE^2$ 是捕捞成本。若同时要求生态安全，则加约束
+\[
+P(T)\ge P_{\min}.
+\]
+实际求解时可枚举 $E=0,0.1,0.2,\ldots$，计算收益和最终鱼群数量，选择满足生态约束且收益较高的方案。
+
+\subsection{结论写法}
+本模型表明，捕捞强度越大，短期收益越高，但种群恢复能力下降。若 $E$ 使得 $qE$ 接近或超过 $r$，鱼群难以恢复，应避免长期高强度捕捞。较合理的策略是在保证 $P(T)\ge P_{\min}$ 的前提下，使收益函数 $J(E)$ 最大。
+
+\section{Python 通用求解模板}
+
+SciPy 的 \texttt{solve\_ivp} 用于求解常微分方程初值问题，其官方文档形式为
+\[
+\frac{dy}{dt}=f(t,y),\quad y(t_0)=y_0.
+\]
+下面给出一个通用模板。只要替换右端函数 \texttt{f}，就可以求解 Logistic、Lotka--Volterra、SIR、Lorenz 等模型。
+
+\begin{lstlisting}[style=pythonstyle,caption={solve\_ivp 通用模板}]
+import numpy as np
+from scipy.integrate import solve_ivp
+import matplotlib.pyplot as plt
+
+def f(t, y, params):
+    # replace this by your own ODE
+    r, K = params
+    P = y[0]
+    return [r * P * (1 - P / K)]
+
+params = (0.3, 1000)
+y0 = [20]
+t_span = (0, 50)
+t_eval = np.linspace(t_span[0], t_span[1], 300)
+sol = solve_ivp(lambda t, y: f(t, y, params), t_span, y0, t_eval=t_eval)
+plt.plot(sol.t, sol.y[0])
+plt.xlabel("time")
+plt.ylabel("P")
+plt.show()
+\end{lstlisting}
+
+\section{总结：考试与建模中最该掌握的结论}
+
+\begin{enumerate}[itemsep=0.35em]
+\item 微分方程建模的核心是“变化率 = 增加项 - 减少项”。
+\item 指数增长模型适合短期预测，阻滞增长模型适合有资源上限的长期预测。
+\item Logistic 模型的两个平衡点为 $0$ 和 $K$，其中 $K$ 是稳定环境容量。
+\item Gompertz、Richards、$\theta$-Logistic 都是阻滞增长的推广，主要用于调整 S 形曲线形状。
+\item Lotka--Volterra 模型用乘积项 $xy$ 描述物种相遇和相互作用。
+\item 捕食者--食饵模型可以加入环境容量、Holling 捕食函数、人工捕捞和控制优化。
+\item 竞争、互利、寄生、传染病等模型都可以看成“自身增长 + 相互作用 + 限制项”的组合。
+\item 天气预测的真实模型是复杂偏微分方程系统，教学中可用能量平衡模型和 Lorenz 模型理解基本思想。
+\item 预测模型必须评价，常用 MAE、RMSE、MAPE、$R^2$、Bias、Brier Score、残差图和测试集误差。
+\item 建模报告要写清楚符号、假设、公式来源、参数估计、求解方法、结果解释和模型局限。
+\end{enumerate}
+
+\section*{参考资料}
+\addcontentsline{toc}{section}{参考资料}
+\begin{enumerate}[label={[\arabic*]},itemsep=0.25em]
+\item SciPy Documentation. \textit{scipy.integrate.solve\_ivp}. \url{https://docs.scipy.org/doc/scipy/reference/generated/scipy.integrate.solve_ivp.html}
+\item OpenStax/LibreTexts. \textit{The Logistic Equation}. \url{https://math.libretexts.org/Bookshelves/Calculus/Calculus_(OpenStax)/08:_Introduction_to_Differential_Equations/8.04:_The_Logistic_Equation}
+\item United Nations. \textit{World Population Prospects 2024: Methodology of the United Nations population estimates and projections}. \url{https://population.un.org/wpp/assets/Files/WPP2024_Methodology-Report_Final.pdf}
+\item Hoppensteadt, F. \textit{Predator-prey model}. Scholarpedia. \url{https://www.scholarpedia.org/article/Predator-prey_model}
+\item NOAA National Centers for Environmental Information. \textit{Numerical Weather Prediction}. \url{https://www.ncei.noaa.gov/products/weather-climate-models/numerical-weather-prediction}
+\item Pu, Z. and Kalnay, E. \textit{Numerical Weather Prediction Basics: Models, Numerical Methods, and Data Assimilation}. \url{https://www.inscc.utah.edu/~pu/6500_sp12/Pu-Kalnay2018_NWP_basics.pdf}
+\item Japan Meteorological Agency. \textit{Verification Indices}. \url{https://www.jma.go.jp/jma/jma-eng/jma-center/nwp/outline2026-nwp/pdf/outline2026_Appendix_A.pdf}
+\item scikit-learn Documentation. \textit{Metrics and scoring: quantifying the quality of predictions}. \url{https://scikit-learn.org/stable/modules/model_evaluation.html}
+\end{enumerate}
+
+\end{document}
