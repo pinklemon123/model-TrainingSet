@@ -1,0 +1,755 @@
+
+\documentclass[11pt,a4paper]{ctexart}
+\usepackage{geometry}
+\geometry{left=2.2cm,right=2.2cm,top=2.4cm,bottom=2.4cm}
+\usepackage{amsmath,amssymb,bm}
+\usepackage{graphicx}
+\usepackage{booktabs,longtable,array,tabularx,multirow}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{caption}
+\usepackage{float}
+\usepackage{framed}
+\graphicspath{{figures/}}
+\hypersetup{colorlinks=true,linkcolor=blue!60!black,urlcolor=blue!60!black,citecolor=blue!60!black}
+\setlist[itemize]{leftmargin=2em}
+\setlist[enumerate]{leftmargin=2em}
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{时间序列常见建模理论与方法}
+\rhead{建模示范案例}
+\cfoot{\thepage}
+\titleformat{\section}{\Large\bfseries\color{blue!55!black}}{\thesection}{0.8em}{}
+\titleformat{\subsection}{\large\bfseries\color{blue!45!black}}{\thesubsection}{0.8em}{}
+\lstdefinestyle{pystyle}{
+    language=Python,
+    basicstyle=\ttfamily\small,
+    keywordstyle=\color{blue!60!black}\bfseries,
+    commentstyle=\color{green!40!black},
+    stringstyle=\color{red!50!black},
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    stepnumber=1,
+    numbersep=8pt,
+    frame=single,
+    framerule=0.3pt,
+    breaklines=true,
+    showstringspaces=false,
+    tabsize=4,
+    columns=fullflexible
+}
+\lstset{style=pystyle}
+\newcommand{\important}[1]{\noindent\colorbox{blue!6}{\parbox{0.97\linewidth}{#1}}}
+\newcommand{\term}[1]{\textbf{#1}}
+
+\title{\bfseries 时间序列常见建模理论与方法\\\large 经济学与数学建模示范案例}
+\author{适用于数学建模、经济预测、课程复习与论文写作}
+\date{2026年7月}
+
+\begin{document}
+\maketitle
+\begin{abstract}
+时间序列是按时间顺序观测得到的数据，常见于 GDP、CPI、股票价格、销售额、气温、客流量、发电量等问题。
+与普通横截面数据不同，时间序列的核心特征是“顺序不能打乱”，并且当前值往往与过去值相关。
+本讲义从建模角度介绍时间序列的常见理论与方法，包括趋势模型、分解模型、移动平均、指数平滑、平稳性、ACF/PACF、AR、MA、ARMA、ARIMA、SARIMA、动态回归、VAR、机器学习预测、误差评价与论文写作模板。
+最后给出一个“月度销售额预测”的完整示范案例，包含公式、建模步骤、Python 代码、图像和评价指标。
+\end{abstract}
+\tableofcontents
+\newpage
+
+\section{时间序列建模的基本思想}
+\subsection{什么是时间序列}
+时间序列可以写成
+\[
+\{y_t\},\qquad t=1,2,\ldots,n,
+\]
+其中 $t$ 表示时间点，$y_t$ 表示第 $t$ 期的观测值。例如月度销售额、季度 GDP、每日股票收盘价、小时级气温等。
+时间序列建模的目标通常不是解释单个样本，而是研究
+\[
+\text{过去的变化规律}\quad \Longrightarrow \quad \text{现在的结构}\quad \Longrightarrow \quad \text{未来的预测}.
+\]
+
+在经济学中，常见变量包括
+\[
+GDP_t,\quad CPI_t,\quad P_t,\quad r_t,\quad Y_t,
+\]
+分别表示第 $t$ 期的国内生产总值、物价指数、价格、利率和收入等。数学和统计中则更强调随机过程、平稳性、自相关函数和预测误差。
+
+\important{\textbf{建模提醒：}时间序列不能像普通样本那样随机打乱训练集和测试集。预测必须遵守时间顺序，即只能用过去的数据预测未来的数据。}
+
+\subsection{常见建模问题}
+时间序列建模中常见的任务有：
+\begin{enumerate}
+  \item \term{描述}：画图观察趋势、周期、季节性、突变点和异常值。
+  \item \term{解释}：分析影响变量变化的主要因素，例如价格、政策、节假日和天气。
+  \item \term{预测}：根据历史数据预测未来 $h$ 期。
+  \item \term{控制}：根据预测结果制定库存、生产、预算、调度等决策。
+\end{enumerate}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\linewidth]{fig09_flowchart.png}
+\caption{时间序列建模的一般流程}
+\end{figure}
+
+\subsection{时间序列的基本组成}
+许多时间序列可以分解为趋势项、季节项、周期项和随机项：
+\[
+y_t=T_t+S_t+C_t+\varepsilon_t.
+\]
+其中 $T_t$ 为长期趋势，$S_t$ 为季节性，$C_t$ 为较长周期波动，$\varepsilon_t$ 为随机扰动。
+如果波动幅度随水平增大而增大，常采用乘法分解：
+\[
+y_t=T_t\times S_t\times C_t\times \varepsilon_t.
+\]
+
+\begin{longtable}{p{3.2cm}p{5.2cm}p{5.2cm}}
+\toprule
+组成 & 含义 & 例子 \\
+\midrule
+趋势 $T_t$ & 长期上升或下降方向 & GDP 长期增长、人口增长、销售额长期提高 \\
+季节 $S_t$ & 固定周期内重复出现的模式 & 月度销售有春节或暑假效应，日用电量有工作日效应 \\
+周期 $C_t$ & 不严格固定周期的长期波动 & 经济繁荣、衰退、复苏 \\
+随机项 $\varepsilon_t$ & 无法完全解释的扰动 & 突发事件、测量误差、市场情绪 \\
+\bottomrule
+\end{longtable}
+
+\section{数据预处理与探索性分析}
+\subsection{数据频率与时间索引}
+建模前首先要确认时间频率：年、季度、月、周、日、小时或分钟。频率决定季节周期，例如月度数据通常取 $m=12$，季度数据取 $m=4$，周度数据可能取 $m=52$。
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\linewidth]{fig01_series.png}
+\caption{示例：某地区月度销售额时间序列}
+\end{figure}
+
+\subsection{缺失值与异常值}
+时间序列常见数据问题包括缺失、重复、时间不连续、异常峰值和结构突变。处理原则如下：
+\begin{itemize}
+  \item 少量缺失可用线性插值、前向填充或同季节均值填补；
+  \item 大量缺失不宜盲目填补，应说明数据不足；
+  \item 异常值不能简单删除，要判断是录入错误还是突发事件；
+  \item 重大政策变化、疫情、战争等可能导致结构突变，应分阶段建模。
+\end{itemize}
+
+\subsection{训练集与测试集划分}
+时间序列常用“前面一段训练、后面一段测试”：
+\[
+\underbrace{y_1,\ldots,y_T}_{\text{训练集}}
+\quad\Longrightarrow\quad
+\underbrace{y_{T+1},\ldots,y_{T+h}}_{\text{测试集}}.
+\]
+更稳妥的做法是滚动预测验证，也叫 rolling forecasting origin。
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\linewidth]{fig08_rolling.png}
+\caption{滚动预测验证示意图}
+\end{figure}
+
+\section{时间序列分解模型}
+\subsection{加法分解}
+加法分解适用于季节波动幅度大致稳定的情况：
+\[
+y_t=T_t+S_t+R_t.
+\]
+其中 $R_t$ 表示残差项。建模时可以先估计趋势，再估计季节效应，最后分析残差是否接近白噪声。
+
+\subsection{乘法分解}
+乘法分解适用于序列水平越高、季节波动越大的情况：
+\[
+y_t=T_t\cdot S_t\cdot R_t.
+\]
+例如某商品销量从每月 1000 件增长到每月 10000 件，季节旺季增幅也从几十件变成几千件，此时乘法模型更合理。
+常见处理是取对数：
+\[
+\log y_t=\log T_t+\log S_t+\log R_t.
+\]
+这样可以把乘法结构转成加法结构。
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\linewidth]{fig02_decompose.png}
+\caption{示例时间序列的趋势、季节和随机项分解}
+\end{figure}
+
+\subsection{适用条件与建模步骤}
+\begin{enumerate}
+  \item 画原始序列图，判断是否存在趋势和季节性；
+  \item 判断季节波动幅度是否随水平增大；
+  \item 若幅度稳定，采用加法分解；若幅度随水平增大，采用乘法分解或对数变换；
+  \item 分解后检查残差是否还有明显结构；
+  \item 若残差仍有自相关，需要继续建立 ARIMA 或其他模型。
+\end{enumerate}
+
+\section{基础预测方法}
+\subsection{平均法}
+平均法认为未来等于历史均值：
+\[
+\hat y_{T+h}=\bar y=\frac{1}{T}\sum_{t=1}^T y_t.
+\]
+它适用于没有明显趋势和季节性的平稳序列，可以作为基准模型。
+
+\subsection{朴素法}
+朴素法认为下一期等于最近一期：
+\[
+\hat y_{T+h}=y_T.
+\]
+金融价格、随机游走类问题中，朴素法往往是一个很强的基准。
+
+\subsection{季节朴素法}
+对于周期为 $m$ 的季节序列，季节朴素法认为未来同一季节接近上一年同季节：
+\[
+\hat y_{T+h}=y_{T+h-m}.
+\]
+例如预测今年 12 月销售额，可以参考去年 12 月销售额。
+
+\subsection{移动平均}
+$k$ 期移动平均为
+\[
+MA_t=\frac{1}{k}\sum_{i=0}^{k-1} y_{t-i}.
+\]
+移动平均的作用是平滑短期波动，突出长期趋势。
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\linewidth]{fig03_ma.png}
+\caption{移动平均平滑短期波动}
+\end{figure}
+
+\subsection{Python 示例}
+\begin{lstlisting}
+import pandas as pd
+
+# y 是带时间索引的 pandas Series
+ma3 = y.rolling(window=3).mean()
+ma12 = y.rolling(window=12).mean()
+
+# 季节朴素预测：用上一年同月份预测下一年同月份
+forecast = y.iloc[-12:].copy()
+forecast.index = pd.date_range(y.index[-1] + pd.offsets.MonthBegin(1), periods=12, freq='MS')
+\end{lstlisting}
+
+\section{指数平滑模型}
+\subsection{一次指数平滑}
+一次指数平滑适用于没有明显趋势和季节性的序列：
+\[
+\hat y_{t+1}=\alpha y_t+(1-\alpha)\hat y_t,
+\qquad 0<\alpha<1.
+\]
+其中 $\alpha$ 越大，越重视最近数据；$\alpha$ 越小，预测越平滑。
+
+\subsection{Holt 线性趋势模型}
+当数据有趋势但无明显季节性时，可使用 Holt 模型：
+\[
+\ell_t=\alpha y_t+(1-\alpha)(\ell_{t-1}+b_{t-1}),
+\]
+\[
+b_t=\beta(\ell_t-\ell_{t-1})+(1-\beta)b_{t-1},
+\]
+\[
+\hat y_{t+h}=\ell_t+h b_t.
+\]
+这里 $\ell_t$ 是水平项，$b_t$ 是趋势项。
+
+\subsection{Holt-Winters 季节模型}
+当数据同时有趋势和季节性时，可使用 Holt-Winters 模型。加法季节模型可写成
+\[
+\ell_t=\alpha(y_t-s_{t-m})+(1-\alpha)(\ell_{t-1}+b_{t-1}),
+\]
+\[
+b_t=\beta(\ell_t-\ell_{t-1})+(1-\beta)b_{t-1},
+\]
+\[
+s_t=\gamma(y_t-\ell_t)+(1-\gamma)s_{t-m},
+\]
+\[
+\hat y_{t+h}=\ell_t+h b_t+s_{t+h-m}.
+\]
+其中 $m$ 是季节周期。statsmodels 的 \texttt{ExponentialSmoothing} 提供了 Holt-Winters 指数平滑实现，支持拟合和预测。
+
+\subsection{适用条件}
+\begin{longtable}{p{3cm}p{5cm}p{5cm}}
+\toprule
+模型 & 适用情况 & 不适合情况 \\
+\midrule
+一次指数平滑 & 无明显趋势、无明显季节 & 有明显上升下降趋势 \\
+Holt 模型 & 有趋势、无明显季节 & 强季节波动 \\
+Holt-Winters & 有趋势且有季节性 & 结构突变严重、季节周期变化 \\
+\bottomrule
+\end{longtable}
+
+\begin{lstlisting}
+from statsmodels.tsa.holtwinters import ExponentialSmoothing
+
+model = ExponentialSmoothing(
+    train,
+    trend='add',
+    seasonal='add',
+    seasonal_periods=12
+)
+fit = model.fit(optimized=True)
+forecast = fit.forecast(12)
+\end{lstlisting}
+
+\section{平稳性、自相关与差分}
+\subsection{平稳性的直观含义}
+平稳序列大致要求均值、方差和自相关结构不随时间明显变化。直观上，序列围绕固定水平上下波动，没有长期趋势，也没有越来越大的波动。
+
+弱平稳通常要求：
+\[
+E(y_t)=\mu,
+\]
+\[
+Var(y_t)=\sigma^2,
+\]
+\[
+Cov(y_t,y_{t-k})=\gamma_k,
+\]
+其中 $\gamma_k$ 只与滞后阶数 $k$ 有关，与具体时刻 $t$ 无关。
+
+\subsection{差分}
+若序列有趋势，可以作一阶差分：
+\[
+\nabla y_t=y_t-y_{t-1}.
+\]
+若序列有季节性，可以作季节差分：
+\[
+\nabla_m y_t=y_t-y_{t-m}.
+\]
+差分的目的不是“让图好看”，而是把非平稳的水平值转化为较平稳的变化量。
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\linewidth]{fig04_diff.png}
+\caption{一阶差分与季节差分的直观效果}
+\end{figure}
+
+\subsection{自相关函数 ACF}
+自相关函数描述 $y_t$ 与 $y_{t-k}$ 的相关程度：
+\[
+\rho_k=\frac{Cov(y_t,y_{t-k})}{Var(y_t)}.
+\]
+ACF 可用于判断序列是否存在记忆性、季节性和 MA 阶数。
+
+\subsection{偏自相关函数 PACF}
+PACF 衡量在剔除中间滞后影响后，$y_t$ 与 $y_{t-k}$ 的直接相关程度。PACF 常用于判断 AR 阶数。
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\linewidth]{fig05_acf_pacf.png}
+\caption{ACF 与 PACF 可用于辅助选择 ARIMA 阶数}
+\end{figure}
+
+\subsection{白噪声}
+若残差 $e_t$ 没有明显自相关，均值接近 0，方差相对稳定，则可以认为模型已经较好地提取了序列中的信息。若残差仍有明显趋势、季节性或自相关，说明模型还有改进空间。
+
+\section{AR、MA、ARMA 与 ARIMA 模型}
+\subsection{AR 自回归模型}
+AR($p$) 模型写成
+\[
+y_t=c+\phi_1y_{t-1}+\phi_2y_{t-2}+\cdots+\phi_p y_{t-p}+\varepsilon_t.
+\]
+意思是当前值由过去 $p$ 期值线性决定。适合具有惯性和延续性的平稳序列。
+
+\subsection{MA 移动平均模型}
+MA($q$) 模型写成
+\[
+y_t=\mu+\varepsilon_t+\theta_1\varepsilon_{t-1}+\cdots+\theta_q\varepsilon_{t-q}.
+\]
+意思是当前值受当前冲击和过去预测误差影响。
+
+\subsection{ARMA 模型}
+ARMA($p,q$) 结合 AR 和 MA：
+\[
+y_t=c+\sum_{i=1}^p\phi_i y_{t-i}+\varepsilon_t+\sum_{j=1}^q\theta_j\varepsilon_{t-j}.
+\]
+它适用于平稳序列。
+
+\subsection{ARIMA 模型}
+若原序列非平稳，但经过 $d$ 次差分后平稳，则可用 ARIMA($p,d,q$)：
+\[
+\phi(B)(1-B)^d y_t=c+\theta(B)\varepsilon_t.
+\]
+其中 $B$ 是滞后算子，$By_t=y_{t-1}$。
+statsmodels 文档中，\texttt{ARIMA} 是 ARIMA 型模型的基本接口，既包括 AR、MA、ARMA、ARIMA，也包括 SARIMA 和带外生变量的回归误差模型。
+
+\subsection{ARIMA 建模步骤}
+\begin{enumerate}
+  \item 画图观察趋势、季节性、异常值；
+  \item 通过差分使序列尽量平稳；
+  \item 用 ACF/PACF 初步判断 $p,q$；
+  \item 试验多个模型，用 AIC/BIC、残差诊断、测试误差综合选择；
+  \item 用模型预测未来，并给出置信区间或预测区间；
+  \item 评价 MAE、RMSE、MAPE 等误差指标。
+\end{enumerate}
+
+\begin{lstlisting}
+from statsmodels.tsa.arima.model import ARIMA
+
+# order=(p,d,q)
+model = ARIMA(train, order=(1,1,1))
+fit = model.fit()
+forecast = fit.forecast(steps=12)
+print(fit.summary())
+\end{lstlisting}
+
+\section{SARIMA 季节 ARIMA 模型}
+\subsection{模型形式}
+若序列有明显季节周期，可使用 SARIMA：
+\[
+SARIMA(p,d,q)(P,D,Q)_m.
+\]
+其中 $(p,d,q)$ 是非季节部分，$(P,D,Q)$ 是季节部分，$m$ 是季节周期。完整形式可写为
+\[
+\Phi(B^m)\phi(B)(1-B)^d(1-B^m)^D y_t
+=\Theta(B^m)\theta(B)\varepsilon_t.
+\]
+
+\subsection{参数含义}
+\begin{longtable}{p{2.6cm}p{10.5cm}}
+\toprule
+参数 & 含义 \\
+\midrule
+$p$ & 非季节自回归阶数，表示受最近多少期水平影响 \\
+$d$ & 非季节差分次数，用来消除普通趋势 \\
+$q$ & 非季节移动平均阶数，表示受过去误差影响的阶数 \\
+$P$ & 季节自回归阶数，例如受去年同月影响 \\
+$D$ & 季节差分次数，例如 $y_t-y_{t-12}$ \\
+$Q$ & 季节移动平均阶数 \\
+$m$ & 季节周期，月度数据常取 12，季度数据常取 4 \\
+\bottomrule
+\end{longtable}
+
+\begin{lstlisting}
+from statsmodels.tsa.statespace.sarimax import SARIMAX
+
+model = SARIMAX(
+    train,
+    order=(1,1,1),
+    seasonal_order=(1,1,1,12),
+    enforce_stationarity=False,
+    enforce_invertibility=False
+)
+fit = model.fit(disp=False)
+forecast = fit.forecast(12)
+\end{lstlisting}
+
+\section{动态回归、ARIMAX 与外生变量}
+\subsection{普通趋势回归}
+若变量随时间近似线性变化，可先建立趋势回归：
+\[
+y_t=\beta_0+\beta_1t+\varepsilon_t.
+\]
+如果存在季节性，可以加入季节虚拟变量：
+\[
+y_t=\beta_0+\beta_1t+\sum_{j=1}^{m-1}\delta_jD_{j,t}+\varepsilon_t.
+\]
+
+\subsection{带外生变量的时间序列模型}
+经济问题中，目标变量往往受其他变量影响。例如销售额受价格、广告、节假日、温度影响：
+\[
+y_t=\beta_0+\beta_1 price_t+\beta_2 ad_t+\beta_3 holiday_t+u_t.
+\]
+如果误差 $u_t$ 存在自相关，可以令 $u_t$ 服从 ARIMA 模型，这就是动态回归或 ARIMAX/SARIMAX 的思想。
+
+\begin{lstlisting}
+from statsmodels.tsa.statespace.sarimax import SARIMAX
+
+# exog_train 是外生变量，比如价格、广告、节假日虚拟变量
+model = SARIMAX(
+    train_y,
+    exog=exog_train,
+    order=(1,1,1),
+    seasonal_order=(1,1,1,12)
+)
+fit = model.fit(disp=False)
+forecast = fit.forecast(steps=12, exog=exog_future)
+\end{lstlisting}
+
+\section{VAR 模型与多变量时间序列}
+\subsection{VAR 的思想}
+如果多个经济变量相互影响，例如 GDP、消费、投资、利率之间可能相互作用，单变量模型可能不够。VAR($p$) 模型写为
+\[
+\bm y_t=\bm c+A_1\bm y_{t-1}+\cdots+A_p\bm y_{t-p}+\bm\varepsilon_t.
+\]
+其中 $\bm y_t$ 是多个变量组成的向量。
+
+\subsection{适用场景}
+\begin{itemize}
+  \item 研究多个变量之间的动态关系；
+  \item 分析冲击响应，例如利率冲击对产出的影响；
+  \item 做多变量联合预测；
+  \item 检验某变量是否有助于预测另一个变量，即 Granger 因果检验。
+\end{itemize}
+
+\subsection{Python 示例}
+\begin{lstlisting}
+from statsmodels.tsa.api import VAR
+
+# df 包含多个时间序列列，例如 GDP, CPI, rate
+model = VAR(df)
+fit = model.fit(maxlags=4, ic='aic')
+forecast = fit.forecast(df.values[-fit.k_ar:], steps=4)
+\end{lstlisting}
+
+\section{机器学习时间序列预测}
+\subsection{基本思想}
+机器学习方法通常把时间序列预测转化为监督学习问题。例如用过去 $p$ 期预测下一期：
+\[
+(y_{t-1},y_{t-2},\ldots,y_{t-p})\longrightarrow y_t.
+\]
+这称为构造滞后特征。
+
+\subsection{常见方法}
+\begin{longtable}{p{3.2cm}p{5.1cm}p{5.1cm}}
+\toprule
+方法 & 优点 & 注意事项 \\
+\midrule
+线性回归/Ridge/Lasso & 简单，可解释性强 & 需要构造趋势、季节、滞后特征 \\
+随机森林 & 能处理非线性和交互 & 外推趋势能力弱 \\
+XGBoost/LightGBM & 预测性能强，适合表格特征 & 需要严格按时间验证 \\
+神经网络/LSTM & 可处理复杂非线性和长依赖 & 需要较多数据，调参复杂 \\
+Prophet/结构化模型 & 对趋势、节假日、季节建模方便 & 不适合所有数据，仍需残差诊断 \\
+\bottomrule
+\end{longtable}
+
+\subsection{滞后特征代码}
+\begin{lstlisting}
+def make_lag_features(y, lags=12):
+    import pandas as pd
+    df = pd.DataFrame({'y': y})
+    for k in range(1, lags + 1):
+        df[f'lag_{k}'] = df['y'].shift(k)
+    df['month'] = df.index.month
+    df = df.dropna()
+    X = df.drop(columns='y')
+    target = df['y']
+    return X, target
+\end{lstlisting}
+
+\section{预测评价指标与残差诊断}
+\subsection{常见误差指标}
+设真实值为 $y_t$，预测值为 $\hat y_t$，误差为 $e_t=y_t-\hat y_t$。
+常见指标如下：
+\[
+MAE=\frac1n\sum_{t=1}^n |y_t-\hat y_t|,
+\]
+\[
+MSE=\frac1n\sum_{t=1}^n (y_t-\hat y_t)^2,
+\]
+\[
+RMSE=\sqrt{\frac1n\sum_{t=1}^n (y_t-\hat y_t)^2},
+\]
+\[
+MAPE=\frac{100\%}{n}\sum_{t=1}^n \left|\frac{y_t-\hat y_t}{y_t}\right|.
+\]
+
+\begin{longtable}{p{2.6cm}p{4.8cm}p{5.8cm}}
+\toprule
+指标 & 优点 & 注意事项 \\
+\midrule
+MAE & 单位与原变量一致，直观 & 对大误差惩罚不如 RMSE 强 \\
+MSE & 数学性质好，常用于优化 & 单位是原变量平方，不够直观 \\
+RMSE & 对大误差更敏感，单位直观 & 容易受异常点影响 \\
+MAPE & 百分比误差，便于比较 & 当真实值接近 0 时不稳定 \\
+$sMAPE$ & 缓解 MAPE 的零值问题 & 解释不如 MAE 直观 \\
+MASE & 可跨序列比较 & 需要基准模型作为尺度 \\
+$R^2$ & 衡量拟合解释程度 & 时间序列预测中不能单独作为好坏标准 \\
+\bottomrule
+\end{longtable}
+
+scikit-learn 的 \texttt{metrics} 模块提供了多种预测误差评价函数，例如均方误差和决定系数。要注意 $R^2$ 最好值为 1，但可能为负值，表示模型甚至不如简单均值基准。
+
+\subsection{残差诊断}
+模型拟合后，应检查残差：
+\begin{enumerate}
+  \item 残差均值是否接近 0；
+  \item 残差图是否还有趋势或季节性；
+  \item 残差 ACF 是否显著；
+  \item 是否存在异常大误差；
+  \item 预测区间覆盖率是否合理。
+\end{enumerate}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\linewidth]{fig07_residuals.png}
+\caption{残差序列与残差分布诊断}
+\end{figure}
+
+\begin{lstlisting}
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+import numpy as np
+
+mae = mean_absolute_error(y_true, y_pred)
+rmse = np.sqrt(mean_squared_error(y_true, y_pred))
+mape = np.mean(np.abs((y_true - y_pred) / y_true)) * 100
+r2 = r2_score(y_true, y_pred)
+\end{lstlisting}
+
+\section{示范案例：月度销售额预测}
+\subsection{问题描述}
+某地区统计了 2016 年 1 月至 2025 年 12 月的月度销售额，希望根据前 9 年数据预测最后 12 个月销售额。
+从图像看，该序列同时存在长期上升趋势和明显年度季节性，因此可考虑季节朴素法、Holt-Winters 模型和 SARIMA 模型进行比较。
+
+\subsection{建模假设}
+\begin{enumerate}
+  \item 销售额按月统计，时间间隔相等；
+  \item 历史趋势和季节规律在预测期内大致保持；
+  \item 没有发生重大结构突变；
+  \item 随机扰动均值接近 0；
+  \item 预测期外生因素保持相对稳定，或已通过模型解释。
+\end{enumerate}
+
+\subsection{候选模型}
+\begin{enumerate}
+  \item \term{季节朴素法}：用上一年同月作为预测；
+  \item \term{Holt-Winters}：同时拟合水平、趋势和季节项；
+  \item \term{SARIMA}：通过一阶差分和季节差分处理非平稳性，再建立 ARMA 结构。
+\end{enumerate}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\linewidth]{fig06_forecast.png}
+\caption{训练集、测试集与三种预测结果}
+\end{figure}
+
+\subsection{评价结果}
+\begin{table}[H]
+\centering
+\caption{不同模型在测试集上的预测误差}
+\begin{tabular}{lrrrr}
+\toprule
+模型 & MAE & RMSE & MAPE & $R^2$ \\
+\midrule
+季节朴素法 & 10.84 & 11.93 & 5.38\% & 0.152 \\
+3期均值外推 & 14.30 & 16.74 & 6.99\% & -0.671 \\
+Holt-Winters & 2.59 & 3.52 & 1.30\% & 0.926 \\
+SARIMA & 2.28 & 3.19 & 1.15\% & 0.939 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+从结果看，SARIMA 和 Holt-Winters 都明显优于季节朴素法和均值外推法。SARIMA 的 MAE、RMSE、MAPE 略低，说明在该示范数据上预测更准确；Holt-Winters 的解释更直观，适合作为建模论文中的主模型或对照模型。
+
+\subsection{完整 Python 代码}
+\begin{lstlisting}
+import numpy as np
+import pandas as pd
+from statsmodels.tsa.holtwinters import ExponentialSmoothing
+from statsmodels.tsa.statespace.sarimax import SARIMAX
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+
+# 1. 构造或读取时间序列数据
+# 实际建模中可用 pd.read_excel 或 pd.read_csv 读取真实数据
+idx = pd.date_range('2016-01-01', periods=120, freq='MS')
+np.random.seed(42)
+t = np.arange(120)
+trend = 100 + 0.85 * t
+season_pattern = np.array([-14, -10, -6, 2, 8, 12, 18, 16, 7, 1, -6, -12])
+season = np.tile(season_pattern, 10)
+noise = np.random.normal(0, 4, 120)
+y = pd.Series(trend + season + noise, index=idx, name='sales')
+
+# 2. 按时间顺序划分训练集和测试集
+train = y.iloc[:-12]
+test = y.iloc[-12:]
+
+# 3. 季节朴素法
+seasonal_naive = pd.Series(train.iloc[-12:].values, index=test.index)
+
+# 4. Holt-Winters 模型
+hw_model = ExponentialSmoothing(
+    train,
+    trend='add',
+    seasonal='add',
+    seasonal_periods=12
+)
+hw_fit = hw_model.fit(optimized=True)
+hw_pred = hw_fit.forecast(12)
+
+# 5. SARIMA 模型
+sarima_model = SARIMAX(
+    train,
+    order=(1, 1, 1),
+    seasonal_order=(1, 1, 1, 12),
+    enforce_stationarity=False,
+    enforce_invertibility=False
+)
+sarima_fit = sarima_model.fit(disp=False)
+sarima_pred = sarima_fit.forecast(12)
+
+# 6. 误差评价函数
+def evaluate(y_true, y_pred):
+    mae = mean_absolute_error(y_true, y_pred)
+    rmse = np.sqrt(mean_squared_error(y_true, y_pred))
+    mape = np.mean(np.abs((y_true - y_pred) / y_true)) * 100
+    r2 = r2_score(y_true, y_pred)
+    return mae, rmse, mape, r2
+
+for name, pred in {
+    'seasonal_naive': seasonal_naive,
+    'holt_winters': hw_pred,
+    'sarima': sarima_pred
+}.items():
+    print(name, evaluate(test, pred))
+\end{lstlisting}
+
+\subsection{规范论文写法示例}
+在论文或建模报告中，可以这样写：
+
+\begin{framed}
+本文选取某地区月度销售额作为研究对象。首先绘制时间序列图，发现序列具有明显上升趋势和年度季节性。为保证预测评价的客观性，将前 108 个月作为训练集，最后 12 个月作为测试集。候选模型包括季节朴素法、Holt-Winters 指数平滑模型和 SARIMA 模型。模型参数通过训练集估计，预测效果使用 MAE、RMSE、MAPE 和 $R^2$ 评价。结果表明，SARIMA 模型在测试集上误差最小，说明其更适合描述该序列的趋势、季节和自相关结构。
+\end{framed}
+
+\section{不同方法的选择建议}
+\begin{longtable}{p{3.2cm}p{4.4cm}p{5.8cm}}
+\toprule
+数据特征 & 推荐方法 & 建模说明 \\
+\midrule
+无趋势无季节 & 平均法、一次指数平滑、ARMA & 先检查平稳性，再看残差自相关 \\
+有趋势无季节 & 趋势回归、Holt、ARIMA & 可用差分或显式趋势项处理 \\
+有季节无趋势 & 季节朴素法、季节分解、SARIMA & 月度数据常用周期 12 \\
+有趋势有季节 & Holt-Winters、SARIMA、动态回归 & 建议至少比较两个模型 \\
+多个变量相互影响 & VAR、VECM、动态回归 & 适合经济系统联动分析 \\
+有外生影响因素 & ARIMAX/SARIMAX、回归+ARMA误差 & 需提供未来外生变量或情景假设 \\
+非线性强、数据量大 & 随机森林、XGBoost、LSTM & 特征构造和时间验证非常重要 \\
+\bottomrule
+\end{longtable}
+
+\section{常见错误与注意事项}
+\begin{enumerate}
+  \item \term{随机打乱数据}：时间序列预测不能随机划分训练测试集。
+  \item \term{只看拟合不看预测}：训练集拟合好不代表未来预测好。
+  \item \term{只看 $R^2$}：预测问题更应关注 MAE、RMSE、MAPE 和残差诊断。
+  \item \term{忽略季节性}：月度和季度经济数据往往有季节效应。
+  \item \term{过度差分}：差分过多会丢失有效信息。
+  \item \term{盲目套模型}：ARIMA、LSTM 等都不是万能模型，必须结合数据特征和业务背景。
+  \item \term{没有基准模型}：至少应与平均法、朴素法或季节朴素法比较。
+\end{enumerate}
+
+\section{总结}
+时间序列建模的核心是：先看图，再分析结构，最后选择模型。一般流程为：
+\[
+\text{数据整理}\rightarrow \text{图形探索}\rightarrow \text{平稳性分析}\rightarrow \text{模型拟合}\rightarrow \text{预测评价}\rightarrow \text{结论解释}.
+\]
+基础方法包括平均法、朴素法、移动平均和指数平滑；统计模型包括 AR、MA、ARMA、ARIMA、SARIMA 和 VAR；现代方法包括机器学习、深度学习和混合模型。对于数学建模竞赛和课程论文，最重要的不是堆砌复杂模型，而是把“为什么选这个模型、公式中每一项表示什么、参数如何估计、预测效果如何评价”写清楚。
+
+\newpage
+\section*{参考资料}
+\addcontentsline{toc}{section}{参考资料}
+\begin{enumerate}
+  \item Rob J. Hyndman and George Athanasopoulos. \emph{Forecasting: Principles and Practice}, 3rd edition. OTexts. \url{https://otexts.com/fpp3/}
+  \item statsmodels documentation. Time Series analysis \texttt{tsa}. \url{https://www.statsmodels.org/stable/tsa.html}
+  \item statsmodels documentation. \texttt{statsmodels.tsa.arima.model.ARIMA}. \url{https://www.statsmodels.org/stable/generated/statsmodels.tsa.arima.model.ARIMA.html}
+  \item statsmodels documentation. \texttt{statsmodels.tsa.holtwinters.ExponentialSmoothing}. \url{https://www.statsmodels.org/devel/generated/statsmodels.tsa.holtwinters.ExponentialSmoothing.html}
+  \item scikit-learn documentation. Metrics and scoring: quantifying the quality of predictions. \url{https://scikit-learn.org/stable/modules/model_evaluation.html}
+  \item scikit-learn documentation. \texttt{mean\_squared\_error} and \texttt{r2\_score}. \url{https://scikit-learn.org/stable/modules/generated/sklearn.metrics.mean_squared_error.html}
+\end{enumerate}
+
+\end{document}
