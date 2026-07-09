@@ -1,0 +1,656 @@
+
+\documentclass[UTF8,12pt,a4paper]{ctexart}
+\usepackage{geometry}
+\geometry{left=2.2cm,right=2.2cm,top=2.2cm,bottom=2.2cm}
+\usepackage{amsmath,amssymb,bm}
+\usepackage{graphicx}
+\usepackage{booktabs,longtable,array}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{caption}
+\usepackage{float}
+\usepackage{fancyhdr}
+\usepackage{fontspec}
+\setmainfont{Noto Serif}
+\setsansfont{Noto Sans}
+\setmonofont{DejaVu Sans Mono}
+\setCJKmainfont{Noto Serif CJK SC}
+\setCJKsansfont{Noto Sans CJK SC}
+\hypersetup{colorlinks=true,linkcolor=blue,urlcolor=blue,citecolor=blue}
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{微分方程建模示范案例}
+\rhead{SEIRD 新冠病毒流行病模型}
+\cfoot{\thepage}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.35em}
+\setlength{\headheight}{15pt}
+\Urlmuskip=0mu plus 2mu\relax
+\renewcommand{\baselinestretch}{1.16}
+\captionsetup{font=small,labelfont=bf}
+\lstdefinestyle{pythonstyle}{
+  language=Python,
+  basicstyle=\ttfamily\small,
+  numbers=left,
+  numberstyle=\tiny\color{gray},
+  frame=single,
+  breaklines=true,
+  columns=fullflexible,
+  keywordstyle=\color{blue!70!black},
+  commentstyle=\color{green!45!black},
+  stringstyle=\color{orange!70!black},
+  showstringspaces=false,
+  tabsize=4
+}
+\lstset{style=pythonstyle}
+
+\title{\heiti 传染病微分方程建模示范案例\\[0.4em]
+\Large 以新冠病毒流行病为背景的 SEIRD 模型}
+\author{建模讲义版}
+\date{\today}
+
+\begin{document}
+\maketitle
+\begin{center}
+\fbox{\begin{minipage}{0.88\textwidth}
+本文不是医学预测报告，而是一份数学建模示范。目标是说明：怎样从现实问题中选变量、列“流入--流出”平衡、建立微分方程、解释每个符号、给出参数、用 Python 求解并评价模型。本文参考了经典 SIR/SEIR 思路，并在教学层面建立一个不太复杂、但符号完整、逻辑清楚的 SEIRD 模型。
+\end{minipage}}
+\end{center}
+\tableofcontents
+\newpage
+
+\section{微分方程建模的通用思想}
+\subsection{什么问题适合用微分方程建模}
+微分方程适合描述“某个量随时间连续变化”的问题。建模时最关键的一句话是：
+\[
+\text{变化率}=\text{流入率}-\text{流出率}+\text{自身增长项}-\text{自身损失项}.
+\]
+例如人口增长、药物浓度衰减、冷却过程、传染病传播、资源消耗、污染扩散、市场份额变化，都可以先找出“状态变量”，再写出状态变量的变化率。
+
+常见的一阶微分方程模型如下。
+\begin{longtable}{p{3.2cm}p{5.2cm}p{6.4cm}}
+\toprule
+模型类型 & 方程形式 & 典型含义 \\
+\midrule
+指数增长/衰减 & $\dfrac{dx}{dt}=kx$ & 个体独立复制或自然衰减。$k>0$ 为增长，$k<0$ 为衰减。\\
+Logistic 增长 & $\dfrac{dx}{dt}=rx\left(1-\dfrac{x}{K}\right)$ & 有环境容量 $K$ 的人口、资源、扩散规模。\\
+牛顿冷却 & $\dfrac{dT}{dt}=-k(T-T_e)$ & 物体温度向环境温度 $T_e$ 逼近。\\
+混合问题 & $\dfrac{dx}{dt}=\text{流入浓度}\times\text{流入量}-\text{流出浓度}\times\text{流出量}$ & 水箱盐量、污染物浓度。\\
+传染病仓室模型 & $\dfrac{dS}{dt},\dfrac{dE}{dt},\dfrac{dI}{dt},\cdots$ & 人群在“易感、潜伏、感染、康复、死亡”等状态之间转移。\\
+\bottomrule
+\end{longtable}
+
+\subsection{微分方程建模六步法}
+\begin{enumerate}[label=\arabic*.]
+\item \textbf{明确研究对象。} 研究的是人数、比例、浓度、库存量，还是概率？本案例研究新冠病毒在一个封闭地区内的传播过程。
+\item \textbf{划分状态变量。} 将总人口分成若干类。传染病建模中常称为“仓室”或“舱室”。
+\item \textbf{写清楚转移机制。} 例如“易感者接触感染者后进入潜伏者”，“潜伏者经过潜伏期后变为感染者”，“感染者一部分康复、一部分死亡”。
+\item \textbf{列出流入--流出方程。} 每个状态变量都要说明它的增加来自哪里，减少流向哪里。
+\item \textbf{给出参数和初值。} 参数必须有含义和单位；初值必须满足总量关系。
+\item \textbf{求解、验证和解释。} 用数值方法求解，画图观察峰值、拐点、最终规模，并用数据拟合或误差指标评价模型。
+\end{enumerate}
+
+\section{传染病仓室模型背景}
+\subsection{从 SIR 到 SEIR 再到 SEIRD}
+经典 SIR 模型将人群分成三类：易感者 $S$、感染者 $I$、移除者或康复者 $R$。你上传的分数阶 SIR 参考资料中也采用了这种基本划分，并写出 $S,I,R$ 的常微分方程，同时用感染率和恢复率解释传播过程。SIR 模型适合潜伏期不明显，或不想单独描述潜伏期的情况。
+
+新冠病毒传播中，感染者从被感染到出现症状、检测阳性或明显传播，往往存在一段潜伏期。因此教学建模时常加入 $E$ 类，即 exposed，表示“已经感染但暂未进入感染者统计或传播状态的人群”。这样得到 SEIR 模型：
+\[
+S\rightarrow E\rightarrow I\rightarrow R.
+\]
+你上传的法国疫情 SEIR 资料也将人群划分为 $S,E,I,R$ 四个部分，并用有效接触率、潜伏转化率、隔离或移除率建立方程。
+
+若希望把死亡人数单独统计出来，可以将 $R$ 中的“康复”和“死亡”分开，得到 SEIRD 模型：
+\[
+S\rightarrow E\rightarrow I\rightarrow R,\qquad I\rightarrow D.
+\]
+本文就建立这个不太复杂、但适合完整展示建模过程的 SEIRD 模型。
+
+\subsection{为什么本文选择 SEIRD 模型}
+选择模型时不要一开始就追求复杂。复杂模型参数多，拟合困难；简单模型虽然粗糙，但更适合作为建模示范。本文选择 SEIRD 的原因如下：
+\begin{enumerate}[label=\arabic*.]
+\item 它保留了新冠传播中重要的潜伏阶段 $E$；
+\item 它把死亡人数 $D$ 单独列出，方便解释“感染者减少 = 康复 + 死亡 + 其他移除”；
+\item 它可以通过一个接触率 $\beta(t)$ 体现口罩、隔离、减少聚集等干预措施；
+\item 它的方程不多，适合手工推导和 Python 求解。
+\end{enumerate}
+
+\section{问题描述与建模目标}
+\subsection{现实问题表述}
+设某地区在一段时间内出现新冠病毒传播。我们希望用一个微分方程模型描述以下问题：
+\begin{itemize}
+\item 易感者会不会快速减少？
+\item 感染者人数何时达到峰值？峰值大约多高？
+\item 如果降低有效接触率，感染峰值会怎样变化？
+\item 死亡人数和康复人数如何随时间变化？
+\item 如果有真实数据，应该如何估计参数、评价拟合效果？
+\end{itemize}
+
+\subsection{建模目标}
+本文建立的模型不用于真实预测，而用于展示建模流程。具体目标为：
+\begin{enumerate}[label=\arabic*.]
+\item 建立一个 SEIRD 常微分方程组；
+\item 逐个解释状态变量、参数和方程每一项的含义；
+\item 给出可运行的 Python 数值求解代码；
+\item 通过图像说明传播峰值、干预影响和有效再生数；
+\item 给出数据拟合和误差评价的基本模板。
+\end{enumerate}
+
+\section{符号、变量和参数}
+\subsection{状态变量}
+设 $t$ 表示时间，单位为“天”。总人口记为 $N$。建立如下状态变量。
+\begin{longtable}{p{2.2cm}p{4.4cm}p{8.2cm}}
+\toprule
+符号 & 名称 & 含义 \\
+\midrule
+$S(t)$ & 易感者 & 第 $t$ 天仍未感染、但可能被感染的人数。\\
+$E(t)$ & 潜伏者 & 已经感染，但暂未进入明显感染状态的人数。可理解为暴露期或潜伏期人群。\\
+$I(t)$ & 感染者 & 具有传播能力、可以使易感者感染的人数。教学模型中将其作为主要传染源。\\
+$R(t)$ & 康复者 & 从感染状态转出并康复的人数。本文假设康复者不再参与传播。\\
+$D(t)$ & 死亡者 & 因疾病死亡的人数。死亡者也退出传播链。\\
+\bottomrule
+\end{longtable}
+
+若忽略出生、自然死亡和迁入迁出，则总人口守恒：
+\[
+S(t)+E(t)+I(t)+R(t)+D(t)=N.
+\]
+也可以使用比例变量：
+\[
+s(t)=\frac{S(t)}{N},\quad e(t)=\frac{E(t)}{N},\quad i(t)=\frac{I(t)}{N},\quad r(t)=\frac{R(t)}{N},\quad d(t)=\frac{D(t)}{N}.
+\]
+此时
+\[
+s(t)+e(t)+i(t)+r(t)+d(t)=1.
+\]
+
+\subsection{参数含义}
+\begin{longtable}{p{2.2cm}p{4.2cm}p{8.4cm}}
+\toprule
+参数 & 名称 & 含义与单位 \\
+\midrule
+$\beta$ & 有效接触感染率 & 单位约为 $1/\text{天}$。表示一个感染者在单位时间内通过有效接触造成易感者感染的强度。它综合了接触频率、传播概率、防护水平等因素。\\
+$\sigma$ & 潜伏转感染率 & 单位为 $1/\text{天}$。若平均潜伏期为 $T_E$ 天，则常取 $\sigma=1/T_E$。\\
+$\gamma$ & 康复率 & 单位为 $1/\text{天}$。若感染者平均经过 $T_R$ 天康复，则可近似取 $\gamma=1/T_R$。\\
+$\mu$ & 死亡率或病亡转出率 & 单位为 $1/\text{天}$。表示感染者中单位时间转入死亡仓室的比例强度。\\
+$\beta(t)$ & 时变接触率 & 干预前后接触率不同。例如减少聚集后，$\beta$ 会下降。\\
+$R_0$ & 基本再生数 & 初期几乎所有人都易感时，一个感染者平均造成的新感染人数。\\
+$R_t$ & 有效再生数 & 第 $t$ 天考虑易感者比例和干预后的传播能力。\\
+\bottomrule
+\end{longtable}
+
+\subsection{建模假设}
+为了保持模型清楚，本文采用以下假设。
+\begin{enumerate}[label=H\arabic*.]
+\item \textbf{封闭人群假设：} 短期内不考虑出生、自然死亡、迁入和迁出。
+\item \textbf{均匀混合假设：} 每个人与其他人接触的机会近似相同，不考虑年龄、职业、空间位置差异。
+\item \textbf{潜伏期假设：} 易感者感染后先进入 $E$，再以速率 $\sigma$ 转入 $I$。
+\item \textbf{感染者传播假设：} 主要由 $I$ 产生新的感染，$E$ 的传播能力暂不单独考虑。
+\item \textbf{康复免疫假设：} $R$ 不再回到 $S$，不考虑重复感染。
+\item \textbf{参数分段常数假设：} 干预前后 $\beta$ 可以变化，其余参数先取常数。
+\end{enumerate}
+
+这些假设并不完全符合现实，但适合完成数学建模作业中的“模型建立--求解--分析--改进”流程。
+
+\section{从文字描述到微分方程}
+\subsection{传播流程图}
+图 \ref{fig:flow} 给出本文建立的 SEIRD 模型结构。
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth]{figs/seird_flow.png}
+\caption{SEIRD 模型的仓室转移关系}
+\label{fig:flow}
+\end{figure}
+
+\subsection{逐项推导：易感者 $S$}
+易感者减少的原因只有一个：与感染者有效接触后被感染，并进入潜伏者仓室 $E$。
+
+通常用
+\[
+\frac{\beta S(t)I(t)}{N}
+\]
+表示单位时间内新增感染人数。这里用 $S(t)I(t)/N$ 是因为：感染者越多，易感者越多，接触产生感染的机会越大；除以 $N$ 是为了把接触规模归一化，避免人口越大时简单乘积过大。
+
+因此
+\[
+\frac{dS}{dt}=-\frac{\beta S I}{N}.
+\]
+这句话可以读作：
+\[
+\text{易感者变化率}=-\text{新增感染人数}.
+\]
+
+\subsection{逐项推导：潜伏者 $E$}
+潜伏者有一个流入和一个流出：
+\begin{itemize}
+\item 流入：易感者被感染后进入 $E$，数量为 $\beta SI/N$；
+\item 流出：潜伏者经过潜伏期后转为感染者，数量为 $\sigma E$。
+\end{itemize}
+所以
+\[
+\frac{dE}{dt}=\frac{\beta S I}{N}-\sigma E.
+\]
+这句话可以读作：
+\[
+\text{潜伏者变化率}=\text{新增感染者进入潜伏期}-\text{潜伏者转为感染者}.
+\]
+
+\subsection{逐项推导：感染者 $I$}
+感染者的增加来自潜伏者转化，减少来自康复和死亡：
+\begin{itemize}
+\item 流入：潜伏者转化为感染者，数量为 $\sigma E$；
+\item 流出 1：感染者康复，数量为 $\gamma I$；
+\item 流出 2：感染者死亡，数量为 $\mu I$。
+\end{itemize}
+因此
+\[
+\frac{dI}{dt}=\sigma E-\gamma I-\mu I.
+\]
+这正是你提到的建模表达方式：
+\[
+\boxed{\text{感染者人数变化}=\text{潜伏者转化而来}-\text{康复者转出}-\text{死亡者转出}.}
+\]
+若 $\sigma E>\gamma I+\mu I$，感染者人数上升；若 $\sigma E<\gamma I+\mu I$，感染者人数下降。
+
+\subsection{逐项推导：康复者 $R$ 与死亡者 $D$}
+康复者只从感染者中来：
+\[
+\frac{dR}{dt}=\gamma I.
+\]
+死亡者也只从感染者中来：
+\[
+\frac{dD}{dt}=\mu I.
+\]
+因此，$R(t)$ 和 $D(t)$ 在本文模型中都是单调不减的。
+
+\subsection{完整模型}
+综合上面的推导，得到 SEIRD 模型：
+\begin{equation}
+\left\{
+\begin{aligned}
+\frac{dS}{dt}&=-\frac{\beta(t)S I}{N},\\
+\frac{dE}{dt}&=\frac{\beta(t)S I}{N}-\sigma E,\\
+\frac{dI}{dt}&=\sigma E-\gamma I-\mu I,\\
+\frac{dR}{dt}&=\gamma I,\\
+\frac{dD}{dt}&=\mu I.
+\end{aligned}
+\right.
+\label{eq:seird}
+\end{equation}
+初始条件为
+\[
+S(0)=S_0,\quad E(0)=E_0,\quad I(0)=I_0,\quad R(0)=R_0,\quad D(0)=D_0,
+\]
+并满足
+\[
+S_0+E_0+I_0+R_0+D_0=N.
+\]
+
+\section{离散形式与建模解释}
+很多同学看到微分方程觉得抽象。其实可以先从一天的差分开始理解。设步长 $\Delta t=1$ 天，则近似有：
+\begin{align*}
+S(t+\Delta t)-S(t)&\approx -\frac{\beta S(t)I(t)}{N}\Delta t,\\
+E(t+\Delta t)-E(t)&\approx \frac{\beta S(t)I(t)}{N}\Delta t-\sigma E(t)\Delta t,\\
+I(t+\Delta t)-I(t)&\approx \sigma E(t)\Delta t-\gamma I(t)\Delta t-\mu I(t)\Delta t,\\
+R(t+\Delta t)-R(t)&\approx \gamma I(t)\Delta t,\\
+D(t+\Delta t)-D(t)&\approx \mu I(t)\Delta t.
+\end{align*}
+
+把 $\Delta t$ 除过去，并令 $\Delta t\to0$，就得到微分方程。建模作业中可以先写“日变化量”，再说明取极限得到连续模型，这样推导会更自然。
+
+\section{基本再生数与阈值判断}
+\subsection{基本再生数 $R_0$}
+在模型初期，若 $S\approx N$，一个感染者造成新感染的强度约为 $\beta$。感染者离开 $I$ 仓室的总速率为 $\gamma+\mu$，平均感染持续时间近似为
+\[
+\frac{1}{\gamma+\mu}.
+\]
+因此本文模型的基本再生数可近似写为
+\[
+R_0=\frac{\beta}{\gamma+\mu}.
+\]
+含义是：初始阶段一个感染者平均造成多少个新感染者。
+
+\subsection{有效再生数 $R_t$}
+随着易感者减少，且接触率可能因干预下降，实际传播能力会改变。有效再生数可写为
+\[
+R_t=\frac{\beta(t)}{\gamma+\mu}\cdot \frac{S(t)}{N}.
+\]
+判断规则为：
+\begin{itemize}
+\item 若 $R_t>1$，感染者总体倾向于增长；
+\item 若 $R_t<1$，感染者总体倾向于下降；
+\item 降低 $\beta(t)$ 或降低 $S(t)/N$ 都会降低 $R_t$。
+\end{itemize}
+
+\section{参数设置：一个示范性案例}
+\subsection{参数取值思路}
+参数取值一般来自三类信息：
+\begin{enumerate}[label=\arabic*.]
+\item \textbf{医学或公共卫生资料：} 如潜伏期、传染期的大致范围；
+\item \textbf{统计数据拟合：} 用确诊、住院、死亡等时间序列估计参数；
+\item \textbf{情景假设：} 为了观察模型性质，设定一组合理但不代表真实预测的参数。
+\end{enumerate}
+
+本文使用第 3 类，即示范性参数。设总人口为
+\[
+N=100000.
+\]
+初始值取
+\[
+E_0=25,\quad I_0=10,\quad R_0=0,\quad D_0=0,
+\]
+于是
+\[
+S_0=99965.
+\]
+
+参数取值如下。
+\begin{longtable}{p{2.6cm}p{4.0cm}p{8.2cm}}
+\toprule
+参数 & 取值 & 解释 \\
+\midrule
+$\sigma$ & $1/5.2$ & 平均潜伏期约 $5.2$ 天，故每天约有 $1/5.2$ 的潜伏者转为感染者。\\
+$\gamma$ & $1/10$ & 平均约 $10$ 天康复转出，故康复率取 $0.1$。\\
+$\mu$ & $0.004$ & 感染者每天约有 $0.4\%$ 转入死亡仓室。此值只用于示范。\\
+$\beta_0$ & $0.48$ & 干预前有效接触感染率。\\
+$\beta_1$ & $0.22$ & 第 35 天后减少接触，有效接触感染率下降。\\
+\bottomrule
+\end{longtable}
+
+设分段接触率为
+\[
+\beta(t)=
+\begin{cases}
+0.48, & 0\le t<35,\\
+0.22, & t\ge 35.
+\end{cases}
+\]
+这种写法表示第 35 天后采取干预措施，如减少聚集、隔离感染者、佩戴口罩或加强通风，使有效接触率下降。
+
+\subsection{初始再生数估算}
+干预前
+\[
+R_0^{\text{前}}=\frac{0.48}{0.1+0.004}\approx4.62.
+\]
+干预后，若 $S\approx N$，则
+\[
+R_0^{\text{后}}=\frac{0.22}{0.1+0.004}\approx2.12.
+\]
+它仍大于 1，说明干预虽然能压低峰值，但在这组示范参数下未必能立刻使疫情完全衰退。若希望 $R_t<1$，需要进一步降低 $\beta(t)$，或者通过免疫、隔离等方式减少有效易感比例。
+
+\section{Python 数值求解}
+\subsection{为什么需要数值解}
+SEIRD 方程是非线性的，因为含有 $S(t)I(t)$。一般不能用初等函数直接写出完整解析解，因此建模中通常使用数值方法。常用方法包括欧拉法、四阶 Runge--Kutta 法，以及软件中的自适应 ODE 求解器。本文用 SciPy 的 \texttt{solve\_ivp}。
+
+\subsection{完整 Python 代码}
+\begin{lstlisting}
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.integrate import solve_ivp
+
+N = 100000
+E0, I0, R0, D0 = 25, 10, 0, 0
+S0 = N - E0 - I0 - R0 - D0
+
+sigma = 1 / 5.2
+Gamma = 1 / 10
+mu = 0.004
+beta0 = 0.48
+beta1 = 0.22
+t_intervene = 35
+
+def beta(t):
+    return beta0 if t < t_intervene else beta1
+
+def seird(t, y):
+    S, E, I, R, D = y
+    new_exposed = beta(t) * S * I / N
+    dS = -new_exposed
+    dE = new_exposed - sigma * E
+    dI = sigma * E - Gamma * I - mu * I
+    dR = Gamma * I
+    dD = mu * I
+    return [dS, dE, dI, dR, dD]
+
+t_eval = np.linspace(0, 160, 321)
+y0 = [S0, E0, I0, R0, D0]
+sol = solve_ivp(seird, (0, 160), y0, t_eval=t_eval,
+                rtol=1e-8, atol=1e-8)
+
+S, E, I, R, D = sol.y
+Rt = np.array([beta(t) / (Gamma + mu) * S[k] / N
+               for k, t in enumerate(sol.t)])
+
+plt.figure(figsize=(9, 5))
+for curve, label in zip([S, E, I, R, D], ['S', 'E', 'I', 'R', 'D']):
+    plt.plot(sol.t, curve, label=label)
+plt.axvline(t_intervene, linestyle='--', label='intervention')
+plt.xlabel('t / day')
+plt.ylabel('population')
+plt.legend()
+plt.grid(True)
+plt.show()
+\end{lstlisting}
+
+\section{数值结果与图像解释}
+\subsection{一次示范性疫情过程}
+图 \ref{fig:simulation} 是根据上述参数得到的 SEIRD 数值模拟。
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\textwidth]{figs/seird_simulation.png}
+\caption{SEIRD 模型数值模拟结果}
+\label{fig:simulation}
+\end{figure}
+
+图像解释如下：
+\begin{enumerate}[label=\arabic*.]
+\item $S(t)$ 单调下降，因为易感者只会被感染而减少；
+\item $E(t)$ 先升后降，因为初期新感染增加，后期易感者减少且干预降低接触率；
+\item $I(t)$ 是最重要的曲线，它的峰值代表医疗系统可能面临的最大压力；
+\item $R(t)$ 和 $D(t)$ 单调上升，分别代表康复累计人数和死亡累计人数；
+\item 第 35 天后 $\beta$ 下降，曲线斜率发生变化，感染者峰值被推迟或压低。
+\end{enumerate}
+
+\subsection{有无干预对比}
+图 \ref{fig:intervention} 比较了“没有干预”和“第 35 天后降低接触率”两种情景。
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\textwidth]{figs/intervention_compare.png}
+\caption{干预前后感染者曲线对比}
+\label{fig:intervention}
+\end{figure}
+
+结论可以这样写：在模型假设下，降低有效接触率 $\beta$ 可以明显压低感染者峰值，并延缓峰值到达时间。这说明减少有效接触、隔离感染者和通风防护等措施在模型中对应于降低 $\beta$，从而降低 $R_t$。
+
+\subsection{有效再生数曲线}
+图 \ref{fig:rt} 显示 $R_t$ 的变化。
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\textwidth]{figs/rt_curve.png}
+\caption{有效再生数 $R_t$ 的变化}
+\label{fig:rt}
+\end{figure}
+
+当 $R_t$ 高于 1 时，感染者容易增长；当 $R_t$ 低于 1 时，感染者趋于下降。注意，$R_t$ 下降有两个原因：一是 $\beta(t)$ 被干预降低；二是 $S(t)/N$ 随传播而下降。
+
+\section{如何拟合真实数据}
+\subsection{可拟合的数据类型}
+如果有真实疫情数据，常见数据包括：
+\begin{itemize}
+\item 每日新增确诊；
+\item 累计确诊；
+\item 现有感染者或现有住院人数；
+\item 累计康复；
+\item 累计死亡。
+\end{itemize}
+不同数据对应模型中的不同量。比如累计死亡可以对应 $D(t)$，现有感染者可以近似对应 $I(t)$，累计转出可近似对应 $R(t)+D(t)$。但真实数据通常受检测政策、统计延迟、漏报影响，因此拟合时要谨慎。
+
+\subsection{最小二乘拟合思想}
+设观测数据为 $(t_j,y_j)$，模型预测值为 $\hat y(t_j;\theta)$，其中 $\theta$ 是待估参数，例如
+\[
+\theta=(\beta,\sigma,\gamma,\mu,E_0,I_0).
+\]
+最小二乘法的目标是让残差平方和最小：
+\[
+\min_{\theta}\sum_{j=1}^m\left[y_j-\hat y(t_j;\theta)\right]^2.
+\]
+如果拟合累计死亡，则 $\hat y(t_j;\theta)=D(t_j)$；如果拟合现有感染者，则 $\hat y(t_j;\theta)=I(t_j)$。
+
+\subsection{拟合代码模板}
+\begin{lstlisting}
+import numpy as np
+from scipy.integrate import solve_ivp
+from scipy.optimize import least_squares
+
+def simulate(theta, t_obs, N, y0_fixed):
+    beta, sigma, Gamma, mu, E0, I0 = theta
+    R0, D0 = 0, 0
+    S0 = N - E0 - I0 - R0 - D0
+    y0 = [S0, E0, I0, R0, D0]
+
+    def f(t, y):
+        S, E, I, R, D = y
+        new_exposed = beta * S * I / N
+        return [-new_exposed,
+                new_exposed - sigma * E,
+                sigma * E - Gamma * I - mu * I,
+                Gamma * I,
+                mu * I]
+
+    sol = solve_ivp(f, (t_obs[0], t_obs[-1]), y0,
+                    t_eval=t_obs, rtol=1e-7, atol=1e-7)
+    return sol.y
+
+def residual(theta, t_obs, y_obs, N):
+    Y = simulate(theta, t_obs, N, None)
+    D_pred = Y[4]       # fit cumulative deaths as an example
+    return D_pred - y_obs
+
+# Example:
+# result = least_squares(residual, x0=theta0,
+#                        bounds=(lower, upper),
+#                        args=(t_obs, deaths_obs, N))
+# theta_hat = result.x
+\end{lstlisting}
+
+\subsection{拟合时的注意事项}
+\begin{enumerate}[label=\arabic*.]
+\item \textbf{参数不能乱放。} $\beta,\sigma,\gamma,\mu$ 都应为非负数；$E_0,I_0$ 也应非负。
+\item \textbf{累计数据容易自相关。} 累计确诊或累计死亡单调上升，拟合看起来可能很好，但残差不一定随机。
+\item \textbf{不要只看一条曲线。} 最好同时比较 $I(t)$、累计病例、死亡人数等多个指标。
+\item \textbf{注意结构不可辨识。} 只用一条累计曲线可能无法唯一估计所有参数。
+\item \textbf{模型预测不是事实。} 预测依赖参数和假设，若政策、病毒变异、检测方式改变，参数会改变。
+\end{enumerate}
+
+\section{误差评价与拟合优度}
+\subsection{常用误差指标}
+设观测值为 $y_j$，模型预测值为 $\hat y_j$，残差为
+\[
+e_j=y_j-\hat y_j.
+\]
+常用指标如下。
+\begin{longtable}{p{2.8cm}p{5.2cm}p{6.5cm}}
+\toprule
+指标 & 公式 & 含义 \\
+\midrule
+SSE & $\sum e_j^2$ & 残差平方和，越小越好，但受样本数和量纲影响。\\
+MSE & $\dfrac{1}{m}\sum e_j^2$ & 均方误差，越小越好。\\
+RMSE & $\sqrt{\dfrac{1}{m}\sum e_j^2}$ & 均方根误差，与原数据同量纲，解释方便。\\
+MAE & $\dfrac{1}{m}\sum |e_j|$ & 平均绝对误差，对异常值比 RMSE 稍不敏感。\\
+MAPE & $\dfrac{100\%}{m}\sum\left|\dfrac{e_j}{y_j}\right|$ & 平均绝对百分比误差；当 $y_j$ 接近 0 时不稳定。\\
+$R^2$ & $1-\dfrac{\sum e_j^2}{\sum(y_j-\bar y)^2}$ & 拟合优度，越接近 1 表示模型解释观测变化的能力越强。\\
+\bottomrule
+\end{longtable}
+
+对于疫情模型，不能只看 $R^2$。因为累计数据本身单调上升，即使模型机制不对，也可能得到较高 $R^2$。更可靠的做法是同时看残差图、预测区间、峰值时间误差、峰值高度误差和测试集误差。
+
+\subsection{残差图}
+图 \ref{fig:resid} 是一个示范残差图。理想情况下，残差应围绕 0 随机波动；如果残差呈现明显趋势，说明模型漏掉了某种系统因素，例如参数随时间变化、检测政策变化、节假日聚集效应等。
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\textwidth]{figs/residual_example.png}
+\caption{拟合后的残差图示例}
+\label{fig:resid}
+\end{figure}
+
+\section{写作模板：建模论文中怎样表述}
+\subsection{模型建立段落模板}
+可以按下面的方式写：
+
+\begin{quote}
+为刻画某地区新冠病毒的传播过程，将总人口 $N$ 划分为易感者 $S(t)$、潜伏者 $E(t)$、感染者 $I(t)$、康复者 $R(t)$ 和死亡者 $D(t)$ 五类。假设短期内总人口封闭，忽略出生、自然死亡及迁入迁出，并假设人群均匀混合。易感者与感染者有效接触后以速率 $\beta S(t)I(t)/N$ 进入潜伏仓室；潜伏者以速率 $\sigma E(t)$ 转为感染者；感染者分别以速率 $\gamma I(t)$ 和 $\mu I(t)$ 康复或死亡。由流入--流出平衡可得 SEIRD 方程组 \eqref{eq:seird}。
+\end{quote}
+
+\subsection{参数解释段落模板}
+\begin{quote}
+其中，$\beta$ 表示有效接触感染率，综合反映接触频率、防护水平和单次接触传播概率；$\sigma$ 为潜伏转感染率，其倒数可理解为平均潜伏期；$\gamma$ 为康复率，其倒数近似表示平均康复时间；$\mu$ 为死亡转出率。若考虑干预措施，可令 $\beta$ 为分段函数 $\beta(t)$，用干预前后的不同取值反映接触率变化。
+\end{quote}
+
+\subsection{结果分析段落模板}
+\begin{quote}
+数值模拟结果显示，感染者 $I(t)$ 先增加后减少，存在明显峰值。干预前后对比表明，降低 $\beta(t)$ 可以压低感染峰值并推迟峰值到达时间。有效再生数 $R_t$ 在干预后明显下降，当 $R_t<1$ 时，感染者规模进入衰退阶段。该结果说明，在模型假设成立的前提下，减少有效接触对控制传播具有重要作用。
+\end{quote}
+
+\section{模型局限性与改进方向}
+\subsection{局限性}
+本文模型有以下局限：
+\begin{enumerate}[label=\arabic*.]
+\item 没有区分无症状感染者和有症状感染者；
+\item 没有区分年龄、职业、学校、社区等接触网络；
+\item 没有加入检测、隔离、住院、重症等现实环节；
+\item 没有考虑疫苗、免疫衰退和重复感染；
+\item 参数被简化为常数或分段常数，而现实中参数会随时间变化；
+\item 真实数据存在漏报、延迟、口径变化，不能直接等同于模型变量。
+\end{enumerate}
+
+\subsection{可扩展模型}
+如果需要更接近现实，可以进一步建立：
+\begin{itemize}
+\item \textbf{SEIAR 模型：} 加入无症状感染者 $A$；
+\item \textbf{SEIQR 模型：} 加入隔离者 $Q$；
+\item \textbf{SEIRV 模型：} 加入疫苗接种者 $V$；
+\item \textbf{年龄结构模型：} 不同年龄组使用不同接触矩阵；
+\item \textbf{空间扩散模型：} 用偏微分方程或网络模型描述地区传播；
+\item \textbf{随机模型：} 用随机过程模拟小样本或早期传播的不确定性。
+\end{itemize}
+
+\section{小结}
+本文完成了一个从现实描述到微分方程模型的完整示范。核心不是死记方程，而是理解“流入--流出”原则：
+\[
+\text{某类人数变化率}=\text{进入该类的人数率}-\text{离开该类的人数率}.
+\]
+在 SEIRD 模型中：
+\begin{align*}
+\frac{dS}{dt}&=-\text{新增感染},\\
+\frac{dE}{dt}&=\text{新增感染}-\text{潜伏转感染},\\
+\frac{dI}{dt}&=\text{潜伏转感染}-\text{康复}-\text{死亡},\\
+\frac{dR}{dt}&=\text{康复},\\
+\frac{dD}{dt}&=\text{死亡}.
+\end{align*}
+只要把每一类人的来源和去向说清楚，就能自然建立模型。后续工作则是给出参数、求解方程、画图解释、与数据对比并进行误差评价。
+
+\newpage
+
+\section*{参考资料}
+\addcontentsline{toc}{section}{参考资料}
+\small
+\sloppy
+\noindent [1] World Health Organization. Coronavirus disease (COVID-19) fact sheet. 主要用于了解 COVID-19 的传播途径、症状起始时间和无症状/症状前传播背景。\url{https://www.who.int/news-room/fact-sheets/detail/coronavirus-disease-(covid-19)}
+
+\noindent [2] World Health Organization. Coronavirus disease (COVID-19): how is it transmitted? 主要用于了解近距离、空气颗粒、通风不良场景中的传播描述。\url{https://www.who.int/news-room/questions-and-answers/item/coronavirus-disease-covid-19-how-is-it-transmitted}
+
+\noindent [3] Centers for Disease Control and Prevention. Clinical Presentation. 主要用于了解潜伏期、症状前传播、无症状传播等背景。\url{https://www.cdc.gov/covid/hcp/clinical-care/covid19-presentation.html}
+
+\noindent [4] Centers for Disease Control and Prevention. COVID-19 Yellow Book. 主要用于了解感染期大致范围和传播早期较强的描述。\url{https://www.cdc.gov/yellow-book/hcp/travel-associated-infections-diseases/covid-19.html}
+
+\noindent [5] SciPy documentation. \texttt{scipy.integrate.solve\_ivp}. 主要用于常微分方程初值问题的数值求解接口。\url{https://docs.scipy.org/doc/scipy/reference/generated/scipy.integrate.solve_ivp.html}
+
+\noindent [6] Giordano, G. et al. Modelling the COVID-19 epidemic and implementation of population-wide interventions in Italy. \textit{Nature Medicine}, 2020. 作为复杂仓室模型 SIDARTHE 的拓展示例。\url{https://www.nature.com/articles/s41591-020-0883-7}
+
+\noindent [7] 任磊，米冬茜. 基于分数阶 SIR 模型的新冠肺炎疾病的传播预测. 《应用数学进展》, 2021. 用户上传资料，作为 SIR 思路和分数阶扩展参考。
+
+\noindent [8] Nicolas Bacaer. 法国冠状病毒流行开始的数学模型. 用户上传资料，作为 SEIR 建模与有效接触率分析参考。
+
+\end{document}

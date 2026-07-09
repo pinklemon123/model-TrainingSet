@@ -1,0 +1,921 @@
+\documentclass[11pt,a4paper]{ctexart}
+\usepackage[margin=2.2cm]{geometry}
+\usepackage{amsmath,amssymb,bm}
+\usepackage{booktabs,longtable,array,multirow}
+\usepackage{graphicx,float}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{listings}
+\usepackage[most]{tcolorbox}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{caption}
+\usepackage{tabularx}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,calc,shapes.geometric}
+
+\setCJKmainfont{Noto Sans CJK SC}
+\setCJKsansfont{Noto Sans CJK SC}
+\setmonofont{DejaVu Sans Mono}
+\hypersetup{colorlinks=true,linkcolor=blue!55!black,urlcolor=blue!60!black,citecolor=blue!55!black}
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{插值、拟合与最小二乘建模讲义}
+\rhead{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\setlength{\parskip}{0.35em}
+\setlength{\parindent}{2em}
+\linespread{1.15}
+\titleformat{\section}{\Large\bfseries\color{blue!55!black}}{\thesection}{0.8em}{}
+\titleformat{\subsection}{\large\bfseries\color{blue!40!black}}{\thesubsection}{0.7em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries\color{black}}{\thesubsubsection}{0.6em}{}
+
+\definecolor{codebg}{RGB}{248,248,248}
+\definecolor{ruleblue}{RGB}{52,91,141}
+\definecolor{softblue}{RGB}{235,243,252}
+\definecolor{softgreen}{RGB}{237,248,238}
+\definecolor{softorange}{RGB}{255,247,235}
+\definecolor{darkgreen}{RGB}{27,105,63}
+
+\lstdefinestyle{pythonstyle}{
+    language=Python,
+    basicstyle=\ttfamily\small,
+    keywordstyle=\color{blue!65!black}\bfseries,
+    commentstyle=\color{darkgreen},
+    stringstyle=\color{orange!70!black},
+    backgroundcolor=\color{codebg},
+    frame=single,
+    rulecolor=\color{black!15},
+    breaklines=true,
+    breakatwhitespace=false,
+    showstringspaces=false,
+    columns=fullflexible,
+    keepspaces=true,
+    numbers=left,
+    numberstyle=\tiny\color{black!45},
+    xleftmargin=2em,
+    framexleftmargin=1.5em,
+    aboveskip=0.8em,
+    belowskip=0.8em
+}
+\lstset{style=pythonstyle}
+
+\newtcolorbox{keybox}[1]{colback=softblue,colframe=ruleblue,title=#1,fonttitle=\bfseries,arc=2mm,boxrule=0.7pt}
+\newtcolorbox{warnbox}[1]{colback=softorange,colframe=orange!70!black,title=#1,fonttitle=\bfseries,arc=2mm,boxrule=0.7pt}
+\newtcolorbox{stepbox}[1]{colback=softgreen,colframe=green!45!black,title=#1,fonttitle=\bfseries,arc=2mm,boxrule=0.7pt}
+
+\newcommand{\diff}{\mathrm{d}}
+\newcommand{\argmin}{\mathop{\mathrm{arg\,min}}}
+\newcommand{\R}{\mathbb{R}}
+
+\begin{document}
+
+\begin{titlepage}
+\centering
+\vspace*{1.8cm}
+{\Huge\bfseries 常用插值算法、曲线拟合与最小二乘建模方法\par}
+\vspace{0.8cm}
+{\Large 拉格朗日、牛顿、埃尔米特、三次样条、二维插值与 Python 实现\par}
+\vspace{1.2cm}
+\begin{tikzpicture}[node distance=1.3cm, every node/.style={font=\small}]
+\node[draw,rounded corners,fill=softblue,minimum width=3.2cm,minimum height=0.9cm] (data) {数据点/观测值};
+\node[draw,rounded corners,fill=softgreen,right=of data,minimum width=3.3cm,minimum height=0.9cm] (choice) {选型：插值或拟合};
+\node[draw,rounded corners,fill=softorange,right=of choice,minimum width=3.4cm,minimum height=0.9cm] (model) {模型、残差与验证};
+\draw[-{Stealth[length=3mm]}] (data) -- (choice);
+\draw[-{Stealth[length=3mm]}] (choice) -- (model);
+\node[draw,rounded corners,fill=white,below=0.9cm of choice,minimum width=9.2cm,align=center] {插值：严格过点；拟合/逼近：允许残差，用整体误差最小刻画趋势};
+\end{tikzpicture}
+\vfill
+{\large 适合：数值分析复习、建模论文方法说明、Python 实验代码模板\par}
+\vspace{0.5cm}
+{\large 生成日期：2026年7月9日\par}
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+\section{总览：什么时候用插值，什么时候用拟合？}
+
+\begin{keybox}{核心区分}
+\textbf{插值}要求构造函数 $s(x)$ 使 $s(x_i)=y_i$，适合数据较准确、节点数不太多、希望在节点之间补值的情形。\textbf{曲线拟合/函数逼近}不要求过每个点，而是让残差总体尽量小，适合观测含噪声、希望找趋势、要预测或解释参数的情形。
+\end{keybox}
+
+常见建模问题可以先按数据性质分为三类：
+\begin{enumerate}[label=\arabic*)]
+  \item \textbf{无噪声或误差很小的数据表}：如函数表、物理标定表、工程查表。优先考虑线性插值、三次样条、Hermite 插值或二维插值。
+  \item \textbf{含噪声观测数据}：如实验测量、统计样本、传感器数据。优先考虑最小二乘、多项式拟合、非线性最小二乘、正则化拟合。
+  \item \textbf{想用简单函数逼近复杂函数}：如考试中的最佳平方逼近、建模中的低维替代模型。优先考虑正交基展开、Chebyshev 多项式、分段多项式或样条逼近。
+\end{enumerate}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.82\textwidth]{figures/interp_vs_fit.png}
+\caption{插值和最小二乘拟合的直观区别：插值多项式过所有点，但高次多项式可能振荡；最小二乘三次拟合不过每个点，却更能体现整体趋势。}
+\end{figure}
+
+\subsection{常用方法速查表}
+
+\begin{longtable}{p{2.8cm}p{3.5cm}p{4.6cm}p{4.0cm}}
+\toprule
+方法 & 目标 & 适用条件 & 注意事项 \\
+\midrule
+拉格朗日插值 & 构造唯一 $n$ 次以内多项式过 $n+1$ 点 & 节点互异，数据较准确 & 节点多时不宜直接展开，优先用重心形式；等距高次会有 Runge 振荡 \\
+牛顿插值 & 用差商递推构造插值多项式 & 节点互异，可逐步加入新点 & 适合手算和递增节点；数值稳定性仍受高次多项式影响 \\
+埃尔米特插值 & 同时匹配函数值和导数值 & 已知节点处斜率/导数 & 信息更强，曲线更光滑；导数估计不准会放大误差 \\
+三次样条插值 & 分段三次，通常要求 $C^2$ 光滑 & 一维有序节点，想要平滑补值 & 需选边界条件：自然、夹持、not-a-knot、周期 \\
+二维插值 & 在平面/网格上补值 & 规则网格或散点数据 & 规则网格用 RegularGridInterpolator；散点用 triangulation/griddata \\
+线性最小二乘 & 最小化 $\|A\beta-y\|_2^2$ & 模型对参数线性，样本通常多于参数 & 优先用 QR/SVD 或库函数，不建议直接求逆 \\
+多项式拟合 & 用低阶多项式逼近趋势 & 数据含噪，趋势平滑 & 阶数过高会过拟合；建议中心化/标准化 \\
+非线性最小二乘 & 最小化残差平方和 $\sum r_i(\theta)^2$ & 模型对参数非线性 & 依赖初值；可加边界、鲁棒损失、参数缩放 \\
+函数逼近 & 在某个范数下逼近函数 & 已知函数或可采样，关注整体误差 & 选择基函数和误差度量最关键 \\
+\bottomrule
+\end{longtable}
+
+\subsection{建模通用流程}
+
+\begin{stepbox}{一套通用建模步骤}
+\begin{enumerate}[label=\arabic*)]
+  \item \textbf{整理数据}：确认自变量维度、单位、是否重复节点、是否有缺失值、是否按 $x$ 排序。
+  \item \textbf{判断误差性质}：数据是否必须全部通过？若观测含噪声，通常不宜插值，而应用拟合。
+  \item \textbf{选择函数族}：多项式、指数、幂函数、样条、分段函数、二维曲面或物理模型。
+  \item \textbf{建立目标函数}：插值是满足约束 $s(x_i)=y_i$；拟合是最小化残差平方和或加权残差。
+  \item \textbf{求解参数/插值函数}：手算可用公式和线性方程组；编程用 NumPy/SciPy。
+  \item \textbf{验证与诊断}：画残差图、计算 RMSE/$R^2$、留出验证、检查外推风险。
+  \item \textbf{写结论}：说明方法、条件、参数、误差、适用范围和不能外推的区间。
+\end{enumerate}
+\end{stepbox}
+
+\newpage
+\section{曲线拟合与最小二乘法}
+
+\subsection{线性最小二乘模型}
+
+设有观测数据 $(x_i,y_i)$，选取基函数 $\phi_0(x),\phi_1(x),\ldots,\phi_m(x)$，用
+\[
+  \hat y = f(x;\bm\beta)=\sum_{j=0}^{m}\beta_j\phi_j(x)
+\]
+拟合数据。令设计矩阵
+\[
+A=\begin{bmatrix}
+\phi_0(x_1)&\phi_1(x_1)&\cdots&\phi_m(x_1)\\
+\phi_0(x_2)&\phi_1(x_2)&\cdots&\phi_m(x_2)\\
+\vdots&\vdots&&\vdots\\
+\phi_0(x_n)&\phi_1(x_n)&\cdots&\phi_m(x_n)
+\end{bmatrix},\qquad
+\bm y=(y_1,\ldots,y_n)^T.
+\]
+线性最小二乘问题为
+\[
+  \min_{\bm\beta}\|A\bm\beta-\bm y\|_2^2.
+\]
+当 $A$ 列满秩时，正规方程为
+\[
+  A^T A\bm\beta=A^T\bm y.
+\]
+但实际计算不建议显式求 $(A^TA)^{-1}$，因为会放大病态性。数值计算通常使用 QR 分解、SVD 或库函数 \verb|numpy.linalg.lstsq|。NumPy 文档也将该接口表述为求 $a x=b$ 的最小二乘解，即最小化 $\|b-ax\|_2$。
+
+\begin{keybox}{使用条件}
+\begin{itemize}
+  \item 模型对未知参数 \(\beta_j\) 是线性的，即参数只以一次形式出现。
+  \item 样本数 $n$ 通常大于参数个数 $m+1$，否则可能解不唯一。
+  \item 残差最好没有明显系统结构；若方差不等，可用加权最小二乘。
+\end{itemize}
+\end{keybox}
+
+\subsection{多项式拟合：最常见的线性最小二乘}
+
+若取基函数 $1,x,x^2,\ldots,x^m$，则
+\[
+  f(x)=\beta_0+\beta_1x+\cdots+\beta_mx^m.
+\]
+这就是多项式拟合。阶数越高，训练误差通常越小，但不代表预测更好。高阶多项式会带来振荡、病态矩阵和过拟合。实际建模一般从低阶开始，通过残差图、验证误差或信息准则选阶。
+
+\begin{lstlisting}
+import numpy as np
+import matplotlib.pyplot as plt
+
+x = np.array([0, 1, 2, 3, 4, 5], dtype=float)
+y = np.array([1.0, 2.1, 2.8, 4.2, 5.1, 6.0])
+
+# Fit y = beta0 + beta1*x + beta2*x^2
+A = np.vstack([np.ones_like(x), x, x**2]).T
+beta, residuals, rank, s = np.linalg.lstsq(A, y, rcond=None)
+print(beta)
+
+xx = np.linspace(x.min(), x.max(), 200)
+yy = beta[0] + beta[1]*xx + beta[2]*xx**2
+plt.scatter(x, y)
+plt.plot(xx, yy)
+plt.show()
+\end{lstlisting}
+
+\subsection{最小二乘法优化：从线性到非线性}
+
+很多模型对参数不是线性的，如指数衰减、Logistic 曲线、Michaelis-Menten 模型：
+\[
+  y=a e^{bx}+c,\qquad
+  y=\frac{L}{1+e^{-k(x-x_0)}},\qquad
+  y=\frac{V_{max}x}{K_m+x}.
+\]
+这时通常写成残差向量
+\[
+  r_i(\bm\theta)=f(x_i;\bm\theta)-y_i,
+  \qquad
+  \min_{\bm\theta}\frac12\sum_{i=1}^n r_i(\bm\theta)^2.
+\]
+非线性最小二乘通常迭代求解，常见算法包括 Gauss-Newton、Levenberg-Marquardt、信赖域反射法等。SciPy 的 \verb|curve_fit| 主要用于曲线拟合参数估计；\verb|least_squares| 更通用，可以直接给残差函数、参数边界和鲁棒损失。
+
+\begin{warnbox}{非线性最小二乘的三件事}
+\begin{enumerate}[label=\arabic*)]
+  \item \textbf{初值很重要}：非线性问题可能陷入局部最优或不收敛。
+  \item \textbf{参数尺度要合理}：不同参数量纲差太大会影响迭代。
+  \item \textbf{要检查残差}：拟合结果看起来通过很多点，不代表模型正确。
+\end{enumerate}
+\end{warnbox}
+
+\begin{lstlisting}
+import numpy as np
+from scipy.optimize import curve_fit, least_squares
+
+# Nonlinear model: y = a * exp(b*x) + c
+def model(x, a, b, c):
+    return a * np.exp(b*x) + c
+
+x = np.linspace(0, 4, 30)
+rng = np.random.default_rng(0)
+y = model(x, 2.0, -0.8, 0.5) + rng.normal(0, 0.08, size=x.size)
+
+# curve_fit: convenient curve fitting interface
+popt, pcov = curve_fit(model, x, y, p0=[1.0, -1.0, 0.0])
+print(popt)
+
+# least_squares: directly define residuals and constraints
+def residual(theta):
+    a, b, c = theta
+    return model(x, a, b, c) - y
+
+res = least_squares(
+    residual,
+    x0=[1.0, -1.0, 0.0],
+    bounds=([0.0, -5.0, -np.inf], [10.0, 0.0, np.inf]),
+    loss='soft_l1'
+)
+print(res.x)
+\end{lstlisting}
+
+\subsection{加权最小二乘与正则化}
+
+若第 $i$ 个观测的标准差为 $\sigma_i$，可最小化
+\[
+  \sum_{i=1}^n\left(\frac{f(x_i)-y_i}{\sigma_i}\right)^2.
+\]
+这等价于给可靠数据更大权重。若模型参数很多或矩阵病态，可加正则化：
+\[
+  \min_{\bm\beta}\|A\bm\beta-\bm y\|_2^2+\lambda\|\bm\beta\|_2^2,
+\]
+即岭回归。正则化的作用是牺牲一点拟合精度，换取更稳定的参数和更好的泛化。
+
+\subsection{拟合结果怎么写成建模论文语言？}
+
+\begin{stepbox}{规范表述模板}
+本文采用最小二乘法拟合变量 $x$ 与响应 $y$ 的关系。设模型为 $f(x;\bm\theta)$，以观测值与模型值之间的残差平方和
+\[
+S(\bm\theta)=\sum_{i=1}^{n}\{y_i-f(x_i;\bm\theta)\}^2
+\]
+作为目标函数。通过数值优化得到参数估计 $\hat{\bm\theta}$，并利用残差图、均方根误差 RMSE 和决定系数 $R^2$ 检验拟合效果。若残差随机分布且验证误差较小，说明模型能够较好刻画数据趋势。
+\end{stepbox}
+
+\newpage
+\section{曲线拟合与函数逼近}
+
+\subsection{函数逼近的基本思想}
+
+曲线拟合是由离散数据出发；函数逼近则常常从一个已知函数 $f(x)$ 出发，用简单函数 $p(x)$ 近似它。常见目标包括：
+\[
+  \min_{p\in V}\max_{x\in[a,b]}|f(x)-p(x)| \quad \text{一致逼近},
+\]
+或
+\[
+  \min_{p\in V}\int_a^b [f(x)-p(x)]^2 w(x)\,\diff x \quad \text{最佳平方逼近}.
+\]
+其中 $V$ 是候选函数空间，比如所有次数不超过 $m$ 的多项式空间。数值分析考试中常见的是最佳平方逼近，建模中常见的是用有限维参数模型压缩复杂函数。
+
+\subsection{插值、拟合、逼近的关系}
+
+\begin{longtable}{p{3.2cm}p{4.1cm}p{4.1cm}p{3.6cm}}
+\toprule
+概念 & 数据来源 & 数学要求 & 典型问题 \\
+\midrule
+插值 & 离散节点，通常认为准确 & 必须过所有节点 & 查表补值、三次样条、二维网格插值 \\
+拟合 & 离散观测，通常含噪声 & 残差整体最小 & 实验数据趋势、回归、参数估计 \\
+函数逼近 & 已知函数或可大量采样 & 某种范数误差最小 & 最佳平方逼近、Chebyshev 逼近、数值算法替代模型 \\
+\bottomrule
+\end{longtable}
+
+\subsection{正交基与最佳平方逼近}
+
+若 $\{\phi_0,\ldots,\phi_m\}$ 在内积
+\[
+  \langle f,g\rangle=\int_a^b f(x)g(x)w(x)\,\diff x
+\]
+下正交，则最佳平方逼近
+\[
+  p_m(x)=\sum_{k=0}^{m}c_k\phi_k(x)
+\]
+的系数为
+\[
+  c_k=\frac{\langle f,\phi_k\rangle}{\langle\phi_k,\phi_k\rangle}.
+\]
+这就是“误差与逼近空间正交”的思想。若基函数不是正交的，就要解正规方程。
+
+\begin{keybox}{建模中如何选择基函数？}
+\begin{itemize}
+  \item 数据在短区间内平滑：低阶多项式或三次样条。
+  \item 有周期性：三角函数基或 Fourier 逼近。
+  \item 有指数增长/衰减：指数函数、对数变换或非线性最小二乘。
+  \item 分段趋势明显：分段线性、分段多项式或样条。
+  \item 高维但样本少：低阶模型、正则化或物理先验比盲目高阶更可靠。
+\end{itemize}
+\end{keybox}
+
+\newpage
+\section{拉格朗日插值法}
+
+\subsection{原理与公式}
+
+给定 $n+1$ 个互异节点 $(x_0,y_0),\ldots,(x_n,y_n)$，存在唯一次数不超过 $n$ 的多项式 $P_n(x)$ 满足
+\[
+P_n(x_i)=y_i,\qquad i=0,1,\ldots,n.
+\]
+拉格朗日基函数定义为
+\[
+  L_i(x)=\prod_{\substack{0\le j\le n\\j\ne i}}\frac{x-x_j}{x_i-x_j}.
+\]
+于是插值多项式为
+\[
+  P_n(x)=\sum_{i=0}^{n}y_i L_i(x).
+\]
+由于 $L_i(x_j)=\delta_{ij}$，代入任一节点 $x_j$ 时只剩 $y_j$，因此它一定过所有节点。
+
+\subsection{误差公式与使用条件}
+
+若 $f\in C^{n+1}[a,b]$，且 $y_i=f(x_i)$，则对任意 $x\in[a,b]$，存在 $\xi$ 介于节点和 $x$ 之间，使
+\[
+  f(x)-P_n(x)=\frac{f^{(n+1)}(\xi)}{(n+1)!}\prod_{i=0}^{n}(x-x_i).
+\]
+该公式说明误差由两部分控制：函数高阶导数大小、节点多项式 $\prod(x-x_i)$。等距节点且次数很高时，端点附近可能出现明显振荡，这就是 Runge 现象的典型来源。
+
+\begin{warnbox}{不要直接展开高次拉格朗日多项式}
+手算小题可以写 $L_i(x)$，但编程中不建议直接计算展开系数。实际数值计算更常使用重心拉格朗日形式，因为它更稳定，也便于更新函数值。SciPy 的 BarycentricInterpolator 就是采用更稳定的重心表示。
+\end{warnbox}
+
+\subsection{步骤}
+\begin{enumerate}[label=\arabic*)]
+  \item 检查节点 $x_i$ 是否互异。
+  \item 写出每个基函数 $L_i(x)$。
+  \item 计算 $P_n(x)=\sum y_iL_i(x)$。
+  \item 若要求具体点 $x^*$ 的估计值，代入 $P_n(x^*)$。
+  \item 若需要误差估计，使用误差公式并估计 $\max |f^{(n+1)}|$。
+\end{enumerate}
+
+\subsection{Python 实现}
+
+\begin{lstlisting}
+import numpy as np
+from scipy.interpolate import BarycentricInterpolator
+
+def lagrange_eval(x_nodes, y_nodes, x_eval):
+    x_nodes = np.asarray(x_nodes, dtype=float)
+    y_nodes = np.asarray(y_nodes, dtype=float)
+    x_eval = np.asarray(x_eval, dtype=float)
+    out = np.zeros_like(x_eval, dtype=float)
+    n = len(x_nodes)
+    for i in range(n):
+        Li = np.ones_like(x_eval, dtype=float)
+        for j in range(n):
+            if i != j:
+                Li *= (x_eval - x_nodes[j]) / (x_nodes[i] - x_nodes[j])
+        out += y_nodes[i] * Li
+    return out
+
+x_nodes = np.array([0.0, 1.0, 2.0, 4.0])
+y_nodes = np.array([1.0, 2.0, 0.0, 3.0])
+xx = np.linspace(0, 4, 100)
+
+# Direct formula, suitable for teaching and small n
+p1 = lagrange_eval(x_nodes, y_nodes, xx)
+
+# Recommended stable implementation
+interp = BarycentricInterpolator(x_nodes, y_nodes)
+p2 = interp(xx)
+\end{lstlisting}
+
+\subsection{小例题}
+
+已知 $f(0)=1,f(1)=2,f(2)=5$，求二次插值多项式。
+
+\[
+L_0=\frac{(x-1)(x-2)}{(0-1)(0-2)}=\frac{(x-1)(x-2)}{2},
+\]
+\[
+L_1=\frac{x(x-2)}{(1-0)(1-2)}=-x(x-2),
+\quad
+L_2=\frac{x(x-1)}{(2-0)(2-1)}=\frac{x(x-1)}{2}.
+\]
+所以
+\[
+P_2(x)=1\cdot L_0+2\cdot L_1+5\cdot L_2=x^2+1.
+\]
+
+\newpage
+\section{牛顿插值法}
+
+\subsection{差商与公式}
+
+牛顿插值使用差商构造多项式：
+\[
+P_n(x)=f[x_0]+f[x_0,x_1](x-x_0)+\cdots+f[x_0,\ldots,x_n]\prod_{k=0}^{n-1}(x-x_k).
+\]
+一阶差商为
+\[
+  f[x_i,x_j]=\frac{f(x_j)-f(x_i)}{x_j-x_i},
+\]
+高阶差商递推为
+\[
+  f[x_i,\ldots,x_{i+k}]
+  =\frac{f[x_{i+1},\ldots,x_{i+k}]-f[x_i,\ldots,x_{i+k-1}]}{x_{i+k}-x_i}.
+\]
+
+\subsection{优势}
+
+牛顿形式和拉格朗日形式表示的是同一个插值多项式，但牛顿法更适合逐步加入节点。若已有 $P_n(x)$，增加新节点 $x_{n+1}$ 时，只需多算一个新的差商系数，而不必重写所有基函数。
+
+\begin{keybox}{使用条件}
+\begin{itemize}
+  \item 节点 $x_i$ 互异。
+  \item 适合节点不断增加、手算差商表、或需要构造递推形式。
+  \item 与拉格朗日一样，高次数插值仍可能振荡。
+\end{itemize}
+\end{keybox}
+
+\subsection{差商表代码}
+
+\begin{lstlisting}
+import numpy as np
+
+def newton_coefficients(x, y):
+    x = np.asarray(x, dtype=float)
+    coef = np.asarray(y, dtype=float).copy()
+    n = len(x)
+    for j in range(1, n):
+        coef[j:n] = (coef[j:n] - coef[j-1:n-1]) / (x[j:n] - x[0:n-j])
+    return coef
+
+def newton_eval(coef, x_nodes, x_eval):
+    x_eval = np.asarray(x_eval, dtype=float)
+    n = len(coef)
+    p = np.zeros_like(x_eval) + coef[-1]
+    for k in range(n-2, -1, -1):
+        p = coef[k] + (x_eval - x_nodes[k]) * p
+    return p
+
+x = np.array([0.0, 1.0, 2.0, 4.0])
+y = np.array([1.0, 2.0, 5.0, 17.0])
+coef = newton_coefficients(x, y)
+print(coef)
+print(newton_eval(coef, x, np.array([3.0])))
+\end{lstlisting}
+
+\subsection{小例题}
+
+给定 $(0,1),(1,2),(2,5)$。差商表：
+\[
+f[x_0]=1,\quad f[x_0,x_1]=1,
+\]
+\[
+f[x_1,x_2]=3,\quad f[x_0,x_1,x_2]=\frac{3-1}{2-0}=1.
+\]
+所以
+\[
+P_2(x)=1+1(x-0)+1(x-0)(x-1)=x^2+1.
+\]
+这与拉格朗日插值得到的结果相同。
+
+\newpage
+\section{埃尔米特插值法（Hermite 插值）}
+
+\subsection{名称说明}
+
+用户常写“埃米尔特”，标准名称一般写作\textbf{埃尔米特插值}或 Hermite interpolation。它不仅要求函数值相同，还要求某些导数值相同。
+
+\subsection{基本思想}
+
+普通插值只使用 $f(x_i)$，而 Hermite 插值还使用 $f'(x_i),f''(x_i)$ 等信息。例如三次 Hermite 插值在区间 $[x_0,x_1]$ 上给定
+\[
+  f(x_0),\quad f(x_1),\quad f'(x_0),\quad f'(x_1),
+\]
+构造一个三次多项式 $H_3(x)$ 同时满足
+\[
+  H_3(x_0)=f(x_0),\quad H_3(x_1)=f(x_1),
+\]
+\[
+  H_3'(x_0)=f'(x_0),\quad H_3'(x_1)=f'(x_1).
+\]
+
+令 $t=(x-x_0)/h$，$h=x_1-x_0$，则三次 Hermite 形式为
+\[
+H(x)=h_{00}(t)y_0+h_{10}(t)hm_0+h_{01}(t)y_1+h_{11}(t)hm_1,
+\]
+其中
+\[
+ h_{00}=2t^3-3t^2+1,
+\quad h_{10}=t^3-2t^2+t,
+\]
+\[
+ h_{01}=-2t^3+3t^2,
+\quad h_{11}=t^3-t^2.
+\]
+这里 $m_0=f'(x_0),m_1=f'(x_1)$。
+
+\begin{keybox}{适用条件}
+\begin{itemize}
+  \item 已知函数值和导数值，或能较准确估计导数。
+  \item 希望曲线在节点处不仅连续，而且斜率也合理。
+  \item 工程制图、轨迹规划、动画曲线、物理量平滑连接中常用。
+\end{itemize}
+\end{keybox}
+
+\begin{warnbox}{导数值不准时的风险}
+Hermite 插值把导数当作硬约束。如果导数来自噪声数据的差分估计，误差可能导致曲线过冲。此时可考虑 PCHIP、平滑样条或先做拟合再求导。
+\end{warnbox}
+
+\subsection{Python 实现}
+
+\begin{lstlisting}
+import numpy as np
+from scipy.interpolate import CubicHermiteSpline
+
+def cubic_hermite_segment(x0, x1, y0, y1, m0, m1, x):
+    h = x1 - x0
+    t = (x - x0) / h
+    h00 = 2*t**3 - 3*t**2 + 1
+    h10 = t**3 - 2*t**2 + t
+    h01 = -2*t**3 + 3*t**2
+    h11 = t**3 - t**2
+    return h00*y0 + h10*h*m0 + h01*y1 + h11*h*m1
+
+x = np.array([0.0, 1.0, 2.0, 3.0])
+y = np.sin(x)
+dydx = np.cos(x)
+xx = np.linspace(0, 3, 200)
+
+spline = CubicHermiteSpline(x, y, dydx)
+yy = spline(xx)
+\end{lstlisting}
+
+\subsection{考试写法示例}
+
+若题目给出 $f(0)=1,f(1)=2,f'(0)=0,f'(1)=3$，设 $x_0=0,x_1=1,h=1,t=x$。代入三次 Hermite 基函数：
+\[
+H(x)=(2x^3-3x^2+1)\cdot 1+(x^3-2x^2+x)\cdot 0
+\]
+\[
++(-2x^3+3x^2)\cdot 2+(x^3-x^2)\cdot 3.
+\]
+整理得
+\[
+H(x)=x^3+x^2+1.
+\]
+
+\newpage
+\section{三次样条插值}
+
+\subsection{为什么需要样条？}
+
+高次全局多项式插值容易振荡，而且任意一个节点变化都会影响整个区间。样条插值采用\textbf{分段低次多项式}：在每个小区间 $[x_i,x_{i+1}]$ 上用三次多项式，但在节点处拼接得足够光滑。
+
+三次样条 $S(x)$ 通常满足：
+\begin{enumerate}[label=\arabic*)]
+  \item 在每个区间 $[x_i,x_{i+1}]$ 上，$S(x)$ 是三次多项式；
+  \item 插值条件：$S(x_i)=y_i$；
+  \item 光滑条件：$S'(x)$ 与 $S''(x)$ 在内节点连续；
+  \item 加上两个边界条件后解唯一。
+\end{enumerate}
+
+SciPy 的 CubicSpline 文档将其描述为二阶连续可微的分段三次插值器，即 $C^2$ 光滑的 piecewise cubic interpolator。
+
+\subsection{常见边界条件}
+
+\begin{longtable}{p{3.0cm}p{6.2cm}p{5.2cm}}
+\toprule
+边界条件 & 数学含义 & 适用情形 \\
+\midrule
+自然边界 natural & $S''(x_0)=S''(x_n)=0$ & 两端弯曲程度未知，想让端点更“自然” \\
+夹持边界 clamped & 指定 $S'(x_0),S'(x_n)$ & 已知端点斜率，如速度、增长率 \\
+not-a-knot & 前两个/后两个区间在更高阶意义上合并 & SciPy 默认常用，端点无额外信息时可用 \\
+周期 periodic & 函数值和导数在两端周期衔接 & 周期数据，如角度、季节周期 \\
+\bottomrule
+\end{longtable}
+
+\subsection{三次样条方程思想}
+
+设 $M_i=S''(x_i)$，$h_i=x_{i+1}-x_i$。对内节点可建立三对角方程：
+\[
+ h_{i-1}M_{i-1}+2(h_{i-1}+h_i)M_i+h_iM_{i+1}
+ =6\left(\frac{y_{i+1}-y_i}{h_i}-\frac{y_i-y_{i-1}}{h_{i-1}}\right).
+\]
+再加上两个边界条件即可解出所有 $M_i$，进而得到每段三次多项式。
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.82\textwidth]{figures/spline_pchip.png}
+\caption{三次样条与保形 PCHIP 的比较：三次样条更平滑；PCHIP 更强调保持单调性和形状，减少过冲。}
+\end{figure}
+
+\subsection{Python 实现}
+
+\begin{lstlisting}
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.interpolate import CubicSpline, PchipInterpolator
+
+x = np.array([0, 1, 2.2, 3.4, 4.0, 5.0, 6.0], dtype=float)
+y = np.array([0, 0.9, 0.2, 1.3, 0.7, 1.5, 1.1], dtype=float)
+xx = np.linspace(x.min(), x.max(), 400)
+
+cs_natural = CubicSpline(x, y, bc_type='natural')
+cs_clamped = CubicSpline(x, y, bc_type=((1, 0.6), (1, -0.2)))
+pchip = PchipInterpolator(x, y)
+
+plt.plot(x, y, 'o')
+plt.plot(xx, cs_natural(xx), label='natural cubic spline')
+plt.plot(xx, cs_clamped(xx), label='clamped cubic spline')
+plt.plot(xx, pchip(xx), label='PCHIP')
+plt.legend()
+plt.show()
+\end{lstlisting}
+
+\subsection{建模建议}
+
+\begin{itemize}
+  \item 若数据真实无噪声，只是想补值，三次样条很常用。
+  \item 若数据含噪声，插值样条会把噪声也穿过去，建议使用平滑样条或最小二乘拟合。
+  \item 若数据有单调性、不能出现过冲，可考虑 PCHIP 而不是普通三次样条。
+  \item 外推通常不可靠，尤其是样条端点外的延伸。
+\end{itemize}
+
+\newpage
+\section{二维插值}
+
+\subsection{二维插值的两类数据}
+
+二维插值一般给定点 $(x_i,y_i)$ 上的函数值 $z_i$，希望估计新点 $(x,y)$ 处的 $z$。关键是先判断数据是\textbf{规则网格}还是\textbf{散点数据}。
+
+\begin{longtable}{p{3.0cm}p{5.0cm}p{6.0cm}}
+\toprule
+数据类型 & 特征 & 推荐方法 \\
+\midrule
+规则网格 & $x$ 坐标和 $y$ 坐标组成矩形网格，$z$ 是二维数组 & 双线性/双三次插值，SciPy RegularGridInterpolator \\
+散点数据 & 点随机分布，不形成完整网格 & 最近邻、线性三角剖分、cubic griddata、RBF、克里金等 \\
+图像数据 & 像素网格，通常等距 & 最近邻、双线性、双三次、Lanczos 等图像插值 \\
+\bottomrule
+\end{longtable}
+
+SciPy 文档说明，\verb|RegularGridInterpolator| 适用于直角网格/rectilinear grid 上的多维数据；\verb|griddata| 是多维非结构散点数据的便捷插值函数，教程中特别提醒散点方法基于三角剖分，若数据已经在完整网格上则应使用 RegularGridInterpolator。
+
+\subsection{双线性插值公式}
+
+在矩形网格单元 $(x_0,y_0),(x_1,y_0),(x_0,y_1),(x_1,y_1)$ 内，设
+\[
+ t=\frac{x-x_0}{x_1-x_0},\qquad u=\frac{y-y_0}{y_1-y_0}.
+\]
+双线性插值为
+\[
+ z(x,y)=(1-t)(1-u)z_{00}+t(1-u)z_{10}+(1-t)u z_{01}+tu z_{11}.
+\]
+它先沿 $x$ 插值，再沿 $y$ 插值，或者反过来结果相同。
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.65\textwidth]{figures/interp_2d.png}
+\caption{二维散点插值示意：黑点为采样点，背景为由散点估计出的连续曲面。}
+\end{figure}
+
+\subsection{规则网格代码}
+
+\begin{lstlisting}
+import numpy as np
+from scipy.interpolate import RegularGridInterpolator
+
+# Structured grid
+x = np.linspace(-2, 2, 21)
+y = np.linspace(-3, 3, 31)
+X, Y = np.meshgrid(x, y, indexing='ij')
+Z = np.sin(X) * np.cos(Y)
+
+interp = RegularGridInterpolator(
+    (x, y), Z,
+    method='linear',
+    bounds_error=False,
+    fill_value=np.nan
+)
+
+query_points = np.array([
+    [0.1, 0.2],
+    [1.3, -2.1],
+    [2.5, 0.0]
+])
+print(interp(query_points))
+\end{lstlisting}
+
+\subsection{散点数据代码}
+
+\begin{lstlisting}
+import numpy as np
+from scipy.interpolate import griddata
+
+rng = np.random.default_rng(0)
+points = rng.uniform([-3, -3], [3, 3], size=(200, 2))
+values = np.sin(points[:, 0]) * np.cos(points[:, 1])
+
+grid_x, grid_y = np.mgrid[-3:3:100j, -3:3:100j]
+grid_z = griddata(points, values, (grid_x, grid_y), method='cubic')
+
+# method can be 'nearest', 'linear', or 'cubic'
+\end{lstlisting}
+
+\subsection{二维插值选型建议}
+
+\begin{itemize}
+  \item 规则网格：优先用 RegularGridInterpolator，速度快、结构清楚。
+  \item 散点数据：数据点较少时可用 griddata；点很多时要考虑计算代价。
+  \item 边界外：多数二维插值对凸包外外推不可靠，griddata 默认会给 NaN。
+  \item 建模论文里要说明插值区域，不要把插值图解释成无限范围的真实规律。
+\end{itemize}
+
+\newpage
+\section{方法对比与选型指南}
+
+\subsection{按问题目标选方法}
+
+\begin{longtable}{p{4.2cm}p{4.8cm}p{5.2cm}}
+\toprule
+问题描述 & 优先方法 & 原因 \\
+\midrule
+函数表补值，节点少且准确 & 拉格朗日/牛顿插值 & 公式清楚，手算方便 \\
+节点不断增加 & 牛顿插值 & 新增节点只需增加一项差商 \\
+已知端点斜率或节点导数 & Hermite 插值 & 可同时匹配函数值和导数 \\
+一维平滑曲线补值 & 三次样条 & 分段低次、整体光滑、稳定 \\
+数据含噪声但趋势平滑 & 最小二乘拟合/平滑样条 & 不强迫过噪声点 \\
+参数模型有物理含义 & 非线性最小二乘 & 能估计参数并解释模型 \\
+二维规则网格 & RegularGridInterpolator & 专门适配网格数据 \\
+二维散点 & griddata/RBF & 能处理非结构点 \\
+\bottomrule
+\end{longtable}
+
+\subsection{按考试题型选方法}
+
+\begin{enumerate}[label=\arabic*)]
+  \item 题目给 2--4 个点，要求“插值多项式”：优先写拉格朗日或牛顿。
+  \item 题目给差商表或要求新增节点：优先牛顿。
+  \item 题目给 $f(x_i)$ 和 $f'(x_i)$：Hermite。
+  \item 题目要求“自然三次样条”或“给边界条件”：列三对角方程。
+  \item 题目说“最佳平方逼近”：写内积、正交条件、解系数。
+  \item 题目说“最小二乘拟合直线/二次曲线”：列正规方程或设计矩阵。
+\end{enumerate}
+
+\subsection{按建模论文写法选方法}
+
+\begin{stepbox}{建模论文方法段模板}
+为获得连续函数估计，先对原始数据进行排序与异常值检查。由于数据（说明是否含噪声），本文采用（插值/拟合）方法。若为插值，构造函数 $s(x)$ 满足 $s(x_i)=y_i$；若为拟合，建立残差 $r_i=y_i-f(x_i;\theta)$ 并最小化 $\sum r_i^2$。随后通过残差图、RMSE、交叉验证或与已知数据对比评价模型效果。最终仅在观测区间内使用该模型，避免无依据外推。
+\end{stepbox}
+
+\newpage
+\section{完整 Python 代码模板}
+
+下面给出一个综合脚本，便于在建模作业中快速试验“插值”和“拟合”的区别。
+
+\begin{lstlisting}
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.interpolate import BarycentricInterpolator, CubicSpline, PchipInterpolator
+from scipy.optimize import curve_fit, least_squares
+
+rng = np.random.default_rng(42)
+x = np.linspace(0, 6, 12)
+y_clean = 1.5 * np.exp(-0.45*x) + 0.25*x + 0.4
+y = y_clean + rng.normal(0, 0.08, size=x.size)
+xx = np.linspace(x.min(), x.max(), 400)
+
+# 1. Polynomial least squares fit
+coef = np.polyfit(x, y, deg=3)
+y_poly = np.polyval(coef, xx)
+
+# 2. Lagrange interpolation with barycentric representation
+lag = BarycentricInterpolator(x, y)
+y_lag = lag(xx)
+
+# 3. Cubic spline interpolation
+cs = CubicSpline(x, y, bc_type='natural')
+y_cs = cs(xx)
+
+# 4. Shape-preserving interpolation
+pchip = PchipInterpolator(x, y)
+y_pchip = pchip(xx)
+
+# 5. Nonlinear least squares
+def exp_model(t, a, b, c, d):
+    return a * np.exp(b*t) + c*t + d
+
+popt, _ = curve_fit(exp_model, x, y, p0=[1.0, -0.5, 0.2, 0.0])
+y_exp = exp_model(xx, *popt)
+
+# Evaluation on the observed data
+methods = {
+    'poly3': np.polyval(coef, x),
+    'lagrange': lag(x),
+    'spline': cs(x),
+    'pchip': pchip(x),
+    'nonlinear_ls': exp_model(x, *popt)
+}
+for name, pred in methods.items():
+    rmse = np.sqrt(np.mean((pred - y)**2))
+    print(name, 'RMSE=', rmse)
+
+plt.scatter(x, y, label='data')
+plt.plot(xx, y_poly, label='poly3 least squares')
+plt.plot(xx, y_lag, label='Lagrange interpolation')
+plt.plot(xx, y_cs, label='natural cubic spline')
+plt.plot(xx, y_pchip, label='PCHIP')
+plt.plot(xx, y_exp, label='nonlinear least squares')
+plt.legend()
+plt.show()
+\end{lstlisting}
+
+\newpage
+\section{常见错误与改进策略}
+
+\subsection{错误一：把含噪声数据强行插值}
+
+若数据来自实验测量，误差不可避免。强行插值会让曲线穿过每个噪声点，可能导致曲线抖动，预测变差。改进方法：使用最小二乘拟合、平滑样条、加权最小二乘或鲁棒损失。
+
+\subsection{错误二：多项式阶数越高越好}
+
+高阶多项式通常能降低训练误差，但可能出现端点振荡和外推爆炸。改进方法：降低阶数、使用 Chebyshev 节点、样条分段、正则化或交叉验证选阶。
+
+\subsection{错误三：直接求逆解最小二乘}
+
+正规方程 $A^TA\beta=A^Ty$ 可以用于理论推导，但实际不应写成 $\beta=(A^TA)^{-1}A^Ty$ 后直接计算。改进方法：用 \verb|np.linalg.lstsq|、QR、SVD 或 SciPy 的线性代数接口。
+
+\subsection{错误四：忽略外推风险}
+
+插值和拟合通常只在数据覆盖区间内可靠。超出节点范围后，尤其是高次多项式、样条端点外延和非线性模型，都可能给出看似平滑但无意义的结果。
+
+\subsection{错误五：没有做残差诊断}
+
+最小二乘拟合后必须画残差图。如果残差呈趋势、周期或漏斗形，说明模型结构、方差假设或变量选择可能有问题。
+
+\newpage
+\section{复习结论}
+
+\begin{keybox}{必须掌握的公式}
+\begin{enumerate}[label=\arabic*)]
+  \item 拉格朗日插值：$P_n(x)=\sum_{i=0}^ny_i\prod_{j\ne i}\frac{x-x_j}{x_i-x_j}$。
+  \item 拉格朗日误差：$f(x)-P_n(x)=\frac{f^{(n+1)}(\xi)}{(n+1)!}\prod_{i=0}^n(x-x_i)$。
+  \item 牛顿插值：$P_n(x)=f[x_0]+f[x_0,x_1](x-x_0)+\cdots$。
+  \item 最小二乘：$\min\|A\beta-y\|_2^2$，正规方程 $A^TA\beta=A^Ty$。
+  \item 最佳平方逼近：误差 $f-p$ 与逼近空间正交。
+  \item 三次样条：分段三次、插值、$S'$ 连续、$S''$ 连续，再加边界条件。
+\end{enumerate}
+\end{keybox}
+
+\begin{keybox}{建模时最重要的判断}
+\begin{itemize}
+  \item 数据是否含噪声？含噪声优先拟合，不含噪声才考虑严格插值。
+  \item 是否需要导数连续？需要光滑曲线优先三次样条或 Hermite。
+  \item 是否是二维规则网格？规则网格和散点数据用的工具不同。
+  \item 是否要解释参数？有物理含义的参数模型优先非线性最小二乘。
+  \item 是否要预测？一定要留出验证或做交叉验证。
+\end{itemize}
+\end{keybox}
+
+\section{参考资料}
+
+本讲义主要参考下列官方文档与论文资料，方法介绍以数值分析常用教材表述为主，Python 接口以官方文档为准。
+
+\begin{enumerate}[label={[\arabic*]}]
+  \item SciPy Documentation, \emph{Interpolation (scipy.interpolate)}. \url{https://docs.scipy.org/doc/scipy/reference/interpolate.html}
+  \item SciPy User Guide, \emph{Interpolation}. \url{https://docs.scipy.org/doc/scipy/tutorial/interpolate.html}
+  \item SciPy Documentation, \emph{CubicSpline}. \url{https://docs.scipy.org/doc/scipy/reference/generated/scipy.interpolate.CubicSpline.html}
+  \item SciPy Documentation, \emph{BarycentricInterpolator}. \url{https://docs.scipy.org/doc/scipy/reference/generated/scipy.interpolate.BarycentricInterpolator.html}
+  \item SciPy Documentation, \emph{RegularGridInterpolator}. \url{https://docs.scipy.org/doc/scipy/reference/generated/scipy.interpolate.RegularGridInterpolator.html}
+  \item SciPy Documentation, \emph{griddata}. \url{https://docs.scipy.org/doc/scipy/reference/generated/scipy.interpolate.griddata.html}
+  \item SciPy Documentation, \emph{curve\_fit}. \url{https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.curve_fit.html}
+  \item SciPy Documentation, \emph{least\_squares}. \url{https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.least_squares.html}
+  \item NumPy Documentation, \emph{numpy.linalg.lstsq}. \url{https://numpy.org/doc/stable/reference/generated/numpy.linalg.lstsq.html}
+  \item NumPy Documentation, \emph{numpy.polynomial.polynomial.polyfit}. \url{https://numpy.org/doc/stable/reference/generated/numpy.polynomial.polynomial.polyfit.html}
+  \item Pauli Virtanen et al., \emph{SciPy 1.0: Fundamental Algorithms for Scientific Computing in Python}. \url{https://arxiv.org/abs/1907.10121}
+\end{enumerate}
+
+\end{document}
